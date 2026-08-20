@@ -88,8 +88,13 @@ switch pick
 %         end
     case 'effort_start'
         if ishandle(handles.effort_start.disp)
+            timezoneOffsets = get(handles.effort_start.timezone, 'UserData');
+            timezoneOffset = timezoneOffsets(...
+                get(handles.effort_start.timezone, 'Value'));
+            localTime = time(1) + hours(timezoneOffset);
             set(handles.effort_start.disp, 'String', ...
-                string(time(1), 'yyyy-MM-dd''T''HH:mm:ss.SSSZ'));
+                string(localTime, 'yyyy-MM-dd''T''HH:mm:ss.SSS'), ...
+                'UserData', time(1));
         end
         
     case 'effort_end'

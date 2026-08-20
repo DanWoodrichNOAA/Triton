@@ -86,7 +86,7 @@ switch action
         % would like to save the effort.
         template = getEffortTemplate();  % Filename for effort template
         saveto = fullfile(effortpath, effortfile);
-        effortTbl = readtable(template, 'Sheet', 'Effort', 'TextType', 'string', 'PreserveVariableNames', true);
+        effortTbl = readEffortTable(template);
         writetable(effortTbl, saveto);
 
         % Write out the effort
@@ -211,8 +211,8 @@ switch action
         % Retrieve the set of ids associated with deployments
         deployment_id = log_getdeploymentids();
         % Verify user has filled in requested fields before proceeding
-        fields = {'deploy', 'user', 'effort_start'};
-        WorksheetNames = { 'DeploymentId', 'User ID', 'Effort Start'};
+        fields = {'user', 'project', 'deploy', 'site', 'effort_start'};
+        WorksheetNames = {'User ID', 'Project', 'Deployment', 'Site', 'Effort Start'};
         values = cell(length(fields),1);
         bad = zeros(1, length(fields));
         for fidx = 1:length(fields)
@@ -230,7 +230,7 @@ switch action
                         values{fidx} = strtrim(strVals(selection, :));
                     end
                 case 'edit'
-                    values{fidx} = current_h.String;
+                    values{fidx} = strtrim(current_h.String);
             end
             
             bad(fidx) = isempty(values{fidx});
@@ -241,11 +241,17 @@ switch action
                         bad(fidx) = true;  % no empty UserId
                     end
                 case 'effort_start'
-                    % Verify date format
+                    % Interpret the entered wall-clock time in the selected
+                    % timezone and normalize it to the Logger's UTC format.
                     try
-                        dt = datetime(values{fidx}, 'TimeZone', 'UTC');
+                        dt = datetime(values{fidx});
+                        timezoneOffsets = get(handles.effort_start.timezone, 'UserData');
+                        timezoneOffset = timezoneOffsets(...
+                            get(handles.effort_start.timezone, 'Value'));
+                        dt = dt - hours(timezoneOffset);
+                        dt.TimeZone = 'UTC';
                         values{fidx} = string(dt, 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
-                    catch excep
+                    catch
                         bad(fidx) = true;
                     end
                 case 'deploy'
@@ -281,7 +287,7 @@ switch action
                 oldcolor(b,:) = get(handles.(fields{b}).disp, 'BackgroundColor');
                 set(handles.(fields{b}).disp, 'BackgroundColor', red);
             end
-            error('Deployment must be numeric and Effort must be date/time format!')
+            error('Complete all metadata fields and enter a valid effort start date/time.')
             pause(.5);
             for b = find(bad)
                 set(handles.(fields{b}).disp, 'BackgroundColor', oldcolor(b,:));

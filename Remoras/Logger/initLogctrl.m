@@ -539,6 +539,14 @@ btnpos = [x(1,2)-dsepx, y(4,1), w, h];
 handles.user.disp= uicontrol(handles.logcallgui,EditAttrib{:},...
     'Position', btnpos);
 
+% Project
+btnpos = [x(1,1), y(5,1), w, h];
+handles.project.text = uicontrol(handles.logcallgui, TextAttrib{:},...
+    'String', 'Project', 'Position', btnpos);
+btnpos = [x(1,2)-dsepx, y(5,1), w, h];
+handles.project.disp = uicontrol(handles.logcallgui, EditAttrib{:},...
+    'Position', btnpos);
+
 % Retrieve valid deployment identifiers if we have a valid query handler
 if ~ isempty(query_h)
     try
@@ -579,11 +587,11 @@ handles.DeploymentStart = '';
 handles.DeploymentEnd = '';
 
 % Deployment
-labelStr = 'Deployment/Id';
-btnpos = [x(1,1), y(5,1), w, h];
+labelStr = 'Deployment';
+btnpos = [x(1,1), y(6,1), w, h];
 handles.deploy.text= uicontrol(handles.logcallgui, TextAttrib{:},...
     'String', labelStr, 'Position', btnpos);
-btnpos = [x(1,2)-dsepx, y(5,1), w, h];
+btnpos = [x(1,2)-dsepx, y(6,1), w, h];
 if isempty(deployment_id)
     handles.deploy.disp = uicontrol(handles.logcallgui, EditAttrib{:},...
         'Position', btnpos,  'String', 'id');
@@ -595,6 +603,14 @@ else
         handles.deploy.disp.Value = match_idx;
     end
 end
+
+% Site
+btnpos = [x(1,1), y(7,1), w, h];
+handles.site.text = uicontrol(handles.logcallgui, TextAttrib{:},...
+    'String', 'Site', 'Position', btnpos);
+btnpos = [x(1,2)-dsepx, y(7,1), w, h];
+handles.site.disp = uicontrol(handles.logcallgui, EditAttrib{:},...
+    'Position', btnpos);
     
 % Effort start time
 btnpos = [x(1,1), y(8,1), w, h];
@@ -606,7 +622,20 @@ handles.effort_start.txt = uicontrol(handles.logcallgui,...
 btnpos = [x(1,2)-dsepx, y(8,1), w, h];
 handles.effort_start.disp = uicontrol(handles.logcallgui, EditAttrib{:},...
     'position', btnpos, ...
-    'String', handles.DeploymentStart);
+    'String', handles.DeploymentStart, ...
+    'Callback', @clear_picked_time);
+timezoneOffsets = [-12 -11 -10 -9.5 -9 -8 -7 -6 -5 -4 -3.5 -3 -2 -1 ...
+    0 1 2 3 3.5 4 4.5 5 5.5 5.75 6 6.5 7 8 8.75 9 9.5 10 ...
+    10.5 11 12 12.75 13 13.75 14];
+timezoneLabels = arrayfun(@(offset) sprintf('UTC%+.2g', offset), ...
+    timezoneOffsets, 'UniformOutput', false);
+timezoneLabels{timezoneOffsets == 0} = 'UTC';
+btnpos = [x(1,3)-dsepx, y(8,1), w, h];
+handles.effort_start.timezone = uicontrol(handles.logcallgui, PopupAttrib{:},...
+    'Position', btnpos, 'String', timezoneLabels, ...
+    'Value', find(timezoneOffsets == 0), 'UserData', timezoneOffsets, ...
+    'Callback', @display_picked_time, ...
+    'TooltipString', 'Timezone used to interpret the effort start time');
 
 
 labelStr = 'Set deployment metadata';
@@ -650,13 +679,17 @@ handles.end_pick.disp = uicontrol(handles.logcallgui, TextAttrib{:}, ...
 
 
 
-handles.log.disp = [handles.deploy.disp handles.user.disp];
-handles.log.text = [handles.deploy.text handles.user.text];
+handles.log.disp = [handles.user.disp handles.project.disp ...
+    handles.deploy.disp handles.site.disp];
+handles.log.text = [handles.user.text handles.project.text ...
+    handles.deploy.text handles.site.text];
 
 handles.log.effort = [...
     handles.user.text handles.user.disp ...
+    handles.project.text handles.project.disp ...
     handles.deploy.text handles.deploy.disp ...
-    handles.effort_start.txt handles.effort_start.disp ...
+    handles.site.text handles.site.disp ...
+    handles.effort_start.txt handles.effort_start.disp handles.effort_start.timezone ...
     handles.done ];
 
 handles.log.close = [handles.done, ...
@@ -687,7 +720,7 @@ switch mode
             writetable(meta, fullfile(fdir, sprintf('%s_MetaData.csv', handles.logbase)));
             onEffort = readtable(template, 'Sheet', 'Detections', 'TextType', 'string', 'PreserveVariableNames', true);
             writetable(onEffort, fullfile(fdir, sprintf('%s_Detections.csv', handles.logbase)));
-            effortSheet = readtable(template, 'Sheet', 'Effort', 'TextType', 'string', 'PreserveVariableNames', true);
+            effortSheet = readEffortTable(template);
             writetable(effortSheet, fullfile(fdir, sprintf('%s_Effort.csv', handles.logbase)));
             
             try
@@ -745,6 +778,28 @@ switch type
         return  % bad value
 end
 if ~ isempty(time)
-    timestr = string(datetime(time, 'TimeZone', 'UTC'), 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
+    utcTime = datetime(time, 'TimeZone', 'UTC');
+    set(handles.(type).disp, 'UserData', utcTime);
+    timezoneOffsets = get(handles.effort_start.timezone, 'UserData');
+    timezoneOffset = timezoneOffsets(get(handles.effort_start.timezone, 'Value'));
+    localTime = utcTime + hours(timezoneOffset);
+    timestr = string(localTime, 'yyyy-MM-dd''T''HH:mm:ss.SSS');
     set(handles.(type).disp, 'String', timestr);
 end
+
+
+function clear_picked_time(hObj, event)
+set(hObj, 'UserData', []);
+
+
+function display_picked_time(hObj, event)
+global handles
+utcTime = get(handles.effort_start.disp, 'UserData');
+if isempty(utcTime)
+    return
+end
+timezoneOffsets = get(hObj, 'UserData');
+timezoneOffset = timezoneOffsets(get(hObj, 'Value'));
+localTime = utcTime + hours(timezoneOffset);
+set(handles.effort_start.disp, 'String', ...
+    string(localTime, 'yyyy-MM-dd''T''HH:mm:ss.SSS'));

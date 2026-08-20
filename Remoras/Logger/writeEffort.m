@@ -119,6 +119,18 @@ callCol = find(strcmp(headerRangeCell, 'Call'));
 granCol = find(strcmp(headerRangeCell, 'Granularity'));
 groupCol = find(strcmp(headerRangeCell, 'Group'));
 
+requiredColumns = {speciesCol, callCol, granCol, groupCol};
+if any(cellfun(@(column) ~isscalar(column), requiredColumns))
+    error('Logger:InvalidEffortTemplate', ...
+        ['Effort template must contain exactly one each of Group, ', ...
+        'Species Code, Call, and Granularity.']);
+end
+
+EffortSheet.(headerRangeCell{granCol}) = ...
+    string(EffortSheet.(headerRangeCell{granCol}));
+EffortSheet.(headerRangeCell{groupCol}) = ...
+    string(EffortSheet.(headerRangeCell{groupCol}));
+
 if length(granCell) > 1
     % BinSize required
     granLastCol = find(strcmp(headerRangeCell, 'BinSize_m'));
@@ -141,20 +153,31 @@ while effortidx > 0 && selectedidx >= 1
     speciesVal = values{1, speciesCol};
     if iscell(speciesVal), speciesVal = speciesVal{1}; end
     
-    if ~ismissing(string(callVal)) && ~ismissing(string(speciesVal)) && ...
-            strcmp(string(callVal), string(list{selectedidx, callCol})) && ...  
-            strcmp(string(speciesVal), string(list{selectedidx, speciesCol}))
+        callPresent = ~all(ismissing(string(callVal)));
+        speciesPresent = ~all(ismissing(string(speciesVal)));
+        if callPresent && speciesPresent
+            callMatches = strcmp(string(callVal), string(list(:, callCol)));
+            speciesMatches = strcmp(string(speciesVal), ...
+                string(list(:, speciesCol)));
+            matchIdx = find(callMatches & speciesMatches, 1, 'last');
+        else
+            matchIdx = [];
+        end
+
+        if ~isempty(matchIdx)
             % Matches, add granularity
-            EffortSheet{effortidx, granCol} = granCell{1};
+            EffortSheet{effortidx, granCol} = string(granCell{1});
             if length(granCell) > 1
                 EffortSheet{effortidx, granLastCol} = granCell{2};
             end
         
-            if ~isempty(list{selectedidx, 1})
+                if ~isempty(list{matchIdx, 1})
                 % first item in group, set group name
-                EffortSheet{effortidx, groupCol} = list{selectedidx, 1};
+                EffortSheet{effortidx, groupCol} = ...
+                    string(list{matchIdx, 1});
             end
-            selectedidx = selectedidx - 1;        
+                list(matchIdx, :) = [];
+                selectedidx = size(list, 1);
             whitespace = false;
     else
         % The first empty row after retaining an entry is retained.
