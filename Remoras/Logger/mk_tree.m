@@ -2,9 +2,9 @@ function [tree, container] = mk_tree(node)
 
 try
    % In MATLAB R2022a+, the 'v0' wrapper was deliberately removed.
-   % We instantiate the Java UITreePeer directly and embed it via javacomponent.
+    % Instantiate the peer directly and embed its Swing component.
    tree = javaObjectEDT('com.mathworks.hg.peer.UITreePeer');
-   [~, container] = javacomponent(tree, [0 0 1 1], node);
+    [~, container] = javacomponent(tree.getScrollPane(), [0 0 1 1], node);
 catch ME
    try
        % Fallback for older MATLAB versions

@@ -428,13 +428,6 @@ switch action
     case 'set_parameter'
         % User has pressed one of the set parameter buttons.  Copy
         % value from the current pick.
-
-        % Retrieve the last selected time X frequency
-        tf = get(handles.timefreq, 'UserData');
-        if isempty(tf)
-            % No selections yet
-            return
-        end
         
         % Retrieve the call attributes
         callAttr = get(handles.species.pulldown, 'UserData');
@@ -448,15 +441,24 @@ switch action
         % if user pressed a parameter button, copy value in from
         % last pick
         change = false;
-        if find(handles.freq == hObject) 
-            if ~ isempty(tf{1}.freq)
+        if any(handles.freq == hObject)
+            tf = get(handles.timefreq(1), 'UserData');
+            if isstruct(tf) && isfield(tf, 'freq') && ~isempty(tf.freq)
                 % Currently only storing frequencies via button mechanism
-                callAttr(callidx).values(paramidx) = tf{1}.freq;
+                callAttr(callidx).values(paramidx) = tf.freq;
+                pickedTime = tf.time;
+                if isdatetime(pickedTime)
+                    pickedTime = convertTo(pickedTime, 'datenum');
+                elseif ischar(pickedTime) || isstring(pickedTime)
+                    pickedTime = datenum(datetime(pickedTime, ...
+                        'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSZ', ...
+                        'TimeZone', 'UTC'));
+                end
                 callAttr(callidx).timefreq(paramidx, :) = ...
-                    [tf{1}.time tf{1}.freq];
+                    [pickedTime tf.freq];
                 set(handles.species.pulldown, 'UserData', callAttr);
                 set(handles.freqdisplay(buttonidx), ...
-                    'String', num2str(tf{1}.freq));
+                    'String', num2str(tf.freq));
                 change = true;
             end
         else
