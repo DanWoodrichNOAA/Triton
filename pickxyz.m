@@ -50,6 +50,11 @@ if PARAMS.expand.button.value  && savalue && ... % LTSA expand if clicked in LTS
     pickxwav
     % turn on channel changer to correct channel selection
     set(HANDLES.ch.pop,'Value',PARAMS.ch)
+elseif isfield(PARAMS, 'log') && ~isempty(PARAMS.log.pick) && ...
+        REMORA.pick.value > 0
+    for k = 1:REMORA.pick.value
+        eval(char(REMORA.pick.fcn{k}));
+    end
 elseif PARAMS.pick.button.value % display pickxyz in Message Window
     set_pointer(HANDLES.fig.main, 'fullcross');
     if isempty(gco)

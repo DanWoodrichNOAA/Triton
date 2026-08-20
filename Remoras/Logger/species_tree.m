@@ -23,21 +23,21 @@ javaImage_partChecked = im2java(I,map);
 iconWidth = javaImage_unchecked.getWidth;
 
 % Create the root node for the tree
-v{1} = 'unselected';
+v{1} = 'selected';
 v{2} = 'root';
 v{3} = '2';
 TREE.rootNode = mk_node(v,'ALL', [], false);
-%add the unchecked icon
-addChild(TREE.rootNode,v{2})
+% Add children selected by default for a usable initial effort.
+addChild(TREE.rootNode, v{2}, javaImage_checked)
 
-TREE.rootNode.setIcon(javaImage_unchecked);
+TREE.rootNode.setIcon(javaImage_checked);
 
 
 
 
 treeModel = DefaultTreeModel( TREE.rootNode );
 % create the tree
-TREE.tree = mk_tree(handles.logcallgui);    %TREE.tree = uitree(handles.logcallgui);
+[TREE.tree, TREE.container] = mk_tree(handles.logcallgui);    %TREE.tree = uitree(handles.logcallgui);
 
 % we often rely on the underlying java tree
 jtree = handle(TREE.tree.getTree,'CallbackProperties');
@@ -45,7 +45,11 @@ jtree = handle(TREE.tree.getTree,'CallbackProperties');
 % some layout
 drawnow;
 TREE.tree.setModel( treeModel );
-set(TREE.tree, 'Units', 'normalized', 'position', [0 0 1 0.87]);
+if isfield(TREE, 'container') && ~isempty(TREE.container)
+    set(TREE.container, 'Units', 'normalized', 'position', [0 0 1 0.87]);
+else
+    set(TREE.tree, 'Units', 'normalized', 'position', [0 0 1 0.87]);
+end
 set(TREE.tree, 'NodeSelectedCallback', @selected_cb );
 
 % make root the initially selected node

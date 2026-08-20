@@ -29,7 +29,16 @@ extent = rbbox();
 info_struct2 = coorddisp(1);
 clickLTSA = false; %if clicked, will switch to true
 if info_struct1.proc
-    info_struct1.time_dnum(1:2) = [datenum(info_struct1.time_vec) datenum(info_struct2.time_vec)];
+    startTime = info_struct1.time_vec;
+    endTime = info_struct2.time_vec;
+    if startTime(1) < 1000
+        startTime(1) = startTime(1) + 2000;
+    end
+    if endTime(1) < 1000
+        endTime(1) = endTime(1) + 2000;
+    end
+    info_struct1.time_str(1) = string(datetime(startTime, 'TimeZone', 'UTC'), 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
+    info_struct1.time_str(2) = string(datetime(endTime, 'TimeZone', 'UTC'), 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
     if strcmp(info_struct1.plot, 'ts')
         info_struct1.freq = [];
         info_struct1.db = [];
@@ -55,7 +64,7 @@ if info_struct1.proc
     if isfield(PARAMS, 'log') % check that a log is actually open 
         if ~isempty(PARAMS.log.pick)
             if ~ isempty(info_struct1.time_vec)
-                log_pick(info_struct1.time_dnum, info_struct1.freq, fname); % inform logger of selection
+                log_pick(info_struct1.time_str, info_struct1.freq, fname); % inform logger of selection
             end
         end
     end

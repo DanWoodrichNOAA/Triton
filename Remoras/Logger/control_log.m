@@ -42,12 +42,12 @@ switch action
         set(handles.logcallgui, 'color',BgColor)
         control_log('display_lastentry');  % Set last entry appropriately
     
-    case 'deployment_start'   
-        project = get(handles.project.disp, 'String');
-        site = get(handles.site.disp, 'String');
-        deployment = get(handles.deploy.disp, 'String');
-        %effort = dbGetEffort(
-        1;
+    case 'deployment_start'
+        deployment = handles.deploy.disp.Value;
+        if isnumeric(deployment)
+            values = handles.deploy.disp.String;
+            deployment = values(deployment);
+        end
         
     case 'display_lastentry'
         % Update the previous entry for this effort type
@@ -56,8 +56,13 @@ switch action
             case 'OffEffort', LastEntryType = 'off effort';
         end
         
-        currentRow = log_lastRow(handles.(PARAMS.log.mode).Sheet);
-        if currentRow > 1
+        if isfield(handles, PARAMS.log.mode) && isfield(handles.(PARAMS.log.mode), 'Sheet')
+            currentRow = height(handles.(PARAMS.log.mode).Sheet);
+        else
+            currentRow = 0;
+        end
+        
+        if currentRow > 0
             pickStr = log_entries(handles.(PARAMS.log.mode), currentRow, true);
             set(handles.deletelog, 'Enable', 'on', ...
                 'String', sprintf('Delete last %s', LastEntryType));
@@ -72,7 +77,7 @@ switch action
         
         
         % Where should effort be saved?
-        [effortfile, effortpath] = uiputfile('.xls', 'Save Effort template to');
+        [effortfile, effortpath] = uiputfile('.csv', 'Save Effort template to');
         if isnumeric(effortfile)
             return % user cancelled
         end
@@ -81,22 +86,37 @@ switch action
         % would like to save the effort.
         template = getEffortTemplate();  % Filename for effort template
         saveto = fullfile(effortpath, effortfile);
-        copyfile(template, saveto, 'f');
+        effortTbl = readtable(template, 'Sheet', 'Effort', 'TextType', 'string', 'PreserveVariableNames', true);
+        writetable(effortTbl, saveto);
 
         % Write out the effort
         writeEffort(TREE.rootNode, saveto);
         
     case 'load_effort'
-        [logfilename, logfilepath]=uigetfile('*.xls', ...
+        [logfilename, logfilepath]=uigetfile('*.csv', ...
             'select a spreadsheet');
         
         if isnumeric(logfilename)
             return
         else
             read_effort(fullfile(logfilepath, logfilename))
-            set(TREE.tree, 'visible', 0)
+            try
+                if isfield(TREE, 'container') && ~isempty(TREE.container)
+                    set(TREE.container, 'Visible', 'off');
+                else
+                    set(TREE.tree, 'Visible', 'off');
+                end
+            catch
+            end
             pause(0.0001)
-            set(TREE.tree, 'visible', 1)
+            try
+                if isfield(TREE, 'container') && ~isempty(TREE.container)
+                    set(TREE.container, 'Visible', 'on');
+                else
+                    set(TREE.tree, 'Visible', 'on');
+                end
+            catch
+            end
         end
         
     case 'species'
@@ -188,30 +208,67 @@ switch action
                 
     case 'set_metadata'
         
+        % Retrieve the set of ids associated with deployments
+        deployment_id = log_getdeploymentids();
         % Verify user has filled in requested fields before proceeding
-        fields = {'project', 'deploy', 'site', 'user', 'effort_start'};
-        WorksheetNames = {'Project', 'Deployment', 'Site', 'User ID', ...
-            'Effort Start'};
+        fields = {'deploy', 'user', 'effort_start'};
+        WorksheetNames = { 'DeploymentId', 'User ID', 'Effort Start'};
         values = cell(length(fields),1);
         bad = zeros(1, length(fields));
         for fidx = 1:length(fields)
-            values{fidx} = get(handles.(fields{fidx}).disp, 'String');
+            current_h = handles.(fields{fidx}).disp;
+            switch current_h.Style
+                case 'popupmenu'
+                    % Retrieve currently selected value
+                    selection = current_h.Value;
+                    strVals = current_h.String;
+                    if iscell(strVals)
+                        values{fidx} = strVals{selection};
+                    elseif isstring(strVals)
+                        values{fidx} = char(strVals(selection));
+                    else
+                        values{fidx} = strtrim(strVals(selection, :));
+                    end
+                case 'edit'
+                    values{fidx} = current_h.String;
+            end
+            
             bad(fidx) = isempty(values{fidx});
             % Additional checking
             switch fields{fidx}
+                case 'user'
+                    if isempty(values{fidx})
+                        bad(fidx) = true;  % no empty UserId
+                    end
                 case 'effort_start'
                     % Verify date format
                     try
-                        values{fidx} = datenum(values{fidx});
-                        values{fidx} = datestr(values{fidx}, 31);
+                        dt = datetime(values{fidx}, 'TimeZone', 'UTC');
+                        values{fidx} = string(dt, 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
                     catch excep
                         bad(fidx) = true;
                     end
                 case 'deploy'
-                    % Verify deployment is numeric
-                    [v, ok] = str2num(values{fidx});
-                    if ~ ok
-                        bad(fidx) = true;
+                    % Verify correct deployment if possible
+                    if ~ isempty(deployment_id)
+                        matches = find(strcmpi(values{fidx}, deployment_id));
+                        if length(matches) == 1
+                            % Use canonical value from database in case
+                            % user had incorrect case
+                            values{fidx} = deployment_id(matches);
+                        else
+                            response = questdlg(join([
+                                "Proceed?  You will not be allowed to" ...
+                                "submit this log until a deployment" ...
+                                "with this Id is present, or the Id", ...
+                                "is changed."], " "), ...
+                                "No such deployment in the Tethys database", ...
+                                "Yes", "Let me fix it", "Let me fix it");
+                            switch response
+                                case "Let me fix it"
+                                    bad(fidx) = true;
+                            end
+                        end
                     end
             end
         end
@@ -243,21 +300,25 @@ switch action
         set(handles.done, 'Visible', 'off');
         set(handles.effortPane, 'Visible', 'on');
         log_open(WorksheetNames, values);
-        set(TREE.tree, 'Visible', 1); % overlay effort tree
+        try
+            if isfield(TREE, 'container') && ~isempty(TREE.container)
+                set(TREE.container, 'Visible', 'on');
+            else
+                set(TREE.tree, 'Visible', 'on');
+            end
+        catch
+        end % overlay effort tree
 
         
         % New log, make sure that on/off effort detections are empty
         for f = {'OnEffort', 'OffEffort'}
             f = f{1};
-            RowsN = handles.(f).Sheet.UsedRange.Rows.Count;
-            % Clear all used rows after headers
-            if RowsN > 1
-                Range = handles.(f).Sheet.Range(sprintf('2:%d', RowsN));
-                Range.Clear();  % clear out any data
-                Range.EntireRow.Delete();  % remove rows
+            if height(handles.(f).Sheet) > 0
+                handles.(f).Sheet(1:end, :) = [];  % clear out any data
+                writetable(handles.(f).Sheet, handles.(f).File);
             end
         end
-        
+
     case {'set_effort', 'append'}
         if strcmp(action, 'set_effort')
             %get granularity value
@@ -289,7 +350,7 @@ switch action
                 end
             end
             %passed checks, proceed to write effort sheet
-            writeEffort(TREE.rootNode, handles.Workbook);
+            writeEffort(TREE.rootNode, fullfile(handles.logdir, sprintf('%s_Effort.csv', handles.logbase)));
             % No need to open the log, we already did so.
         else
             read_effort(handles.logfile);
@@ -300,7 +361,14 @@ switch action
         set(handles.effortPane, 'Visible', 'off');
         set(handles.binLabel, 'Visible', 'off');
         set(handles.binTime, 'Visible', 'off')
-        set(TREE.tree, 'Visible', 0); 
+        try
+            if isfield(TREE, 'container') && ~isempty(TREE.container)
+                set(TREE.container, 'Visible', 'off');
+            else
+                set(TREE.tree, 'Visible', 'off');
+            end
+        catch
+        end
         
         % enable logging controls
         set(handles.log.control, 'Visible', 'on');
@@ -314,19 +382,17 @@ switch action
 
     case 'delete_log'
         % Remove the last row if an entry exists.
-        currentRow = log_lastRow(handles.(PARAMS.log.mode).Sheet);
-        if currentRow > 1
-            Range = handles.(PARAMS.log.mode).Sheet.Range(...
-                sprintf('%d:%d', currentRow, currentRow));
-            Range.Clear();  % clear out any data
-            Range.EntireRow.Delete();  % remove row
+        currentRow = height(handles.(PARAMS.log.mode).Sheet);
+        if currentRow > 0
+            handles.(PARAMS.log.mode).Sheet(currentRow, :) = [];
+            writetable(handles.(PARAMS.log.mode).Sheet, handles.(PARAMS.log.mode).File);
             control_log('display_lastentry');
         end
         
     case 'set_meta_end'
         endeffort = get(handles.effort_end.disp, 'String');
         try
-            enddate = datenum(endeffort);  % convert to serial date
+            enddate = datetime(endeffort, 'TimeZone', 'UTC');
         catch
             badfield(handles.effort_end.disp, 'Bad end time', .5);
             return
@@ -342,8 +408,8 @@ switch action
         end
         if ~ isempty(handles.log.endDate) && handles.log.endDate > enddate
             choice = questdlg(sprintf('Selected end of effort %s < existing end %s', ...
-                datestr(enddate, 'yyyy/mm/dd HH:MM:SS'), ...
-                datestr(handles.log.endDate, 'yyyy/mm/dd HH:MM:SS')), ...
+                string(enddate, 'yyyy-MM-dd''T''HH:mm:ss.SSSZ'), ...
+                string(handles.log.endDate, 'yyyy-MM-dd''T''HH:mm:ss.SSSZ')), ...
                 'Effort will be reduced', ...
                 'Proceed', 'Choose new date', 'Choose new date');
             if strcmp(choice, 'Choose new date');
@@ -427,7 +493,6 @@ switch action
         %   regular expression - must be contained in call parameter
         freqs = [tf.freq];
         times = [tf.time];
-        s_per_day = 24*3600;
         check = cell(0,3);
         if length(freqs) >= 1
             check = vertcat(check, ...
@@ -438,7 +503,7 @@ switch action
         end
         if length(times)> 1
             check = vertcat(check, ...
-                {length(times) > 1, diff(times)*s_per_day, '^Duration_s.*$'});
+                {length(times) > 1, seconds(diff(times)), '^Duration_s.*$'});
         end
         
         callAttr = get(handles.species.pulldown, 'UserData');
@@ -484,7 +549,7 @@ switch action
         
     case 'workbook_visibility_toggle'
         if isfield(handles, 'Server')
-            handles.Server.visible = ~handles.Server.visible;
+            % No longer applicable for CSV backend
         else
             str = get(HANDLES.fig.ctrl, 'Name');
             set(HANDLES.fig.ctrl, 'Name', 'No log currently active');
@@ -523,7 +588,14 @@ end
         % the time string.
         tf = get(pickH, 'UserData');
         if isstruct(tf) && isfield(tf, 'time')
-            timestr = datestr(tf(1).time, 'YYYY-mm-DD HH:MM:SS.FFF');
+            if isnumeric(tf(1).time)
+                dt = datetime(tf(1).time, 'ConvertFrom', 'datenum', 'TimeZone', 'UTC');
+            elseif ischar(tf(1).time) || isstring(tf(1).time)
+                dt = datetime(tf(1).time, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSZ', 'TimeZone', 'UTC');
+            else
+                dt = tf(1).time;
+            end
+            timestr = string(dt, 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
             set(timeH, 'String', timestr, 'UserData', tf);
         end
     end
@@ -652,7 +724,16 @@ end
     end
 
     function mkChart
-        [TREE.textR,TREE.textW, TREE.orderR, TREE.dFreq] = disp_sect;
+        try
+            [TREE.textR,TREE.textW, TREE.orderR, TREE.dFreq] = disp_sect;
+        catch
+            [TREE.textR,TREE.textW, TREE.orderR] = disp_sect;
+            if isfield(TREE, 'frequency')
+                TREE.dFreq = TREE.frequency;
+            else
+                TREE.dFreq = cell(size(TREE.textR, 1), 6);
+            end
+        end
         if ~isempty(TREE.textR)
             [TREE.groupR,TREE.groupW] = species_ordering('root');
             %set the group string to the group

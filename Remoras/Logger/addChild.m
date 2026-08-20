@@ -1,5 +1,5 @@
-function addChild(node,value)
-% addChild(node, value)
+function addChild(node, value, selectedIcon)
+% addChild(node, value, selectedIcon)
 % add children to a tree
 
 global TREE
@@ -9,8 +9,6 @@ position = TREE.position;
 if strcmp(value,'root')
     value = '';
 end
-[I,map] = uncheckedIcon;
-javaImage_unchecked = im2java(I,map);
 
 for i = 1:length(specR)
     % create a new value but adding the next subsection to it
@@ -20,21 +18,21 @@ for i = 1:length(specR)
     %find out if the current node has any children
     parent = isParent(newValue);
     
-    v{1} = 'unselected';
+    v{1} = 'selected';
     v{2} = specW{i};
     v{3} = num2str(position-1 + i);
     %create a new node
     newNode = mk_node(v, specR{i}, [], ~parent);   %newNode = uitreenode( v, specR{i}, [], ~parent);
     
-    %add the unchecked icon
-    newNode.setIcon(javaImage_unchecked);
+    % Include new taxonomy nodes in the initial effort.
+    newNode.setIcon(selectedIcon);
     
     % add the new node to the parent node
     node.add(newNode);
     
     %if there are more nodes connected to it then repeat process for new node and values
     if parent 
-        addChild(newNode,newValue);
+        addChild(newNode, newValue, selectedIcon);
     end
 end
 

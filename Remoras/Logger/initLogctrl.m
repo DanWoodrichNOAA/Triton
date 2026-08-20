@@ -10,13 +10,29 @@ function initLogctrl(varargin)
 % Initialize GUI for logger and request log file
 % mode:  'create' - new log, 'append' - continue existing
 
-global PARAMS TREE handles HANDLES
+global PARAMS TREE handles HANDLES REMORA
+
+query_h = []; % Initialize query_h to empty since Tethys is currently disabled
+
+% % Get a Tethys query handler instance from the Tethys REMORA
+% if exist('get_tethys_server') ~= 2
+%     error('Tethys Remora must be installed')
+% else
+%     query_h = get_tethys_server();
+% end
 
 if length(varargin) > 2
     hObject = varargin{1};
     eventdata = varargin{2};
 end
 mode = varargin{end};
+
+registeredPicks = cellfun(@(pickFcn) strcmp(char(pickFcn), 'logpickOn'), ...
+    REMORA.pick.fcn);
+if ~any(registeredPicks)
+    REMORA.pick.fcn{end+1} = {'logpickOn'};
+end
+REMORA.pick.value = length(REMORA.pick.fcn);
 
 
 if exist('handles', 'var') && isfield(handles, 'Server') ...
@@ -34,10 +50,10 @@ end
 
 switch mode
     case 'create'
-        [fname, fdir] = uiputfile('.xls', 'New annotation log');
+        [fname, fdir] = uiputfile('.csv', 'New annotation log', 'unique_logname.csv');
     case 'append'
         [fname, fdir] = ...
-            uigetfile({'*.xls'; '*.xlsx'}, 'Open existing annotation log');
+            uigetfile({'*.csv'}, 'Open existing annotation log');
     otherwise
         error('triton:logger', 'Bad log mode')
 end
@@ -47,6 +63,8 @@ if isnumeric(fname)
 end
 
 handles.logfile = fullfile(fdir, fname);
+[~, handles.logbase, ~] = fileparts(handles.logfile);
+handles.logdir = fdir;
 
 
 PARAMS.numfreq = 6;
@@ -65,7 +83,7 @@ PARAMS.log.effort = 1; % effort button is turned on
 PARAMS.log.start = 0; % effort button is turned on
 PARAMS.effort.end = [];  % end effort has not been specified
 handles.eventcount=[];       %no events logged yet
-handles.dateid = datestr(clock, 'yyyy-mm-dd');
+handles.dateid = string(datetime('now', 'TimeZone', 'UTC'), 'yyyy-MM-dd');
 
 
 % 20 rows, 4 columns, except for motion control buttons
@@ -133,7 +151,14 @@ species_tree(template)
 
 jtree = TREE.tree.getTree;
 set(jtree, 'LargeModel',1);
-set(TREE.tree, 'Visible', 0);
+try
+    if isfield(TREE, 'container') && ~isempty(TREE.container)
+        set(TREE.container, 'Visible', 'off');
+    else
+        set(TREE.tree, 'Visible', 'off');
+    end
+catch
+end
 
 
 labelStr = 'Load Effort Template';
@@ -501,78 +526,76 @@ TextAttrib = {'Style', 'text', 'Units', 'normalized', ...
 EditAttrib = { ...
     'Style', 'edit', 'String', '', 'Units', 'normalized', ...
     'HorizontalAlignment', 'left', 'BackgroundColor', bgColor1};
+% popup menu have these attributes
+PopupAttrib = {
+    'Style', 'popupmenu', 'Units', 'normalized', ...
+    'HorizontalAlignment', 'left', 'BackgroundColor', bgColor1};
     
 % User ID
 btnpos = [x(1,1), y(4,1), w, h];
-handles.user.txt= uicontrol(handles.logcallgui,TextAttrib{:},...
+handles.user.text= uicontrol(handles.logcallgui,TextAttrib{:},...
     'String', 'User ID', 'Position', btnpos );
 btnpos = [x(1,2)-dsepx, y(4,1), w, h];
 handles.user.disp= uicontrol(handles.logcallgui,EditAttrib{:},...
     'Position', btnpos);
 
-% Attempt to parse out the Project, Deployment, and Site from
-% an open LTSA or XWav file
-if length(PARAMS.ltsa.infile) + length(PARAMS.infile) > 0 
-    ProjectSiteDeployRE = '(?<Project>[A-Za-z]+)(?<Deployment>\d+)(?<Site>[A-Za-z0-9]+)_.*';
-    match = regexp(PARAMS.ltsa.infile, ProjectSiteDeployRE, 'names');
-    if isempty(match)
-        % Try the current input file
-        match = regexp(PARAMS.infile, ProjectSiteDeployRE, 'names');        
+% Retrieve valid deployment identifiers if we have a valid query handler
+if ~ isempty(query_h)
+    try
+        dep = dbGetDeployments(query_h, "return", "Id");
+        deployment_id = sort(string(arrayfun(@(x) x.Deployment.Id, dep)));
+    catch e
+        deployment_id = [];
+        fprintf("Unable to query Tethys, list of valid deployment identifiers unavailable\n")
+        fprintf("Error:\n")
+        e
     end
-    if isempty(match)
-        Project = ''; Deployment = ''; Site = '';
-        handles.DeploymentStart = '';
-        handles.DeploymentEnd = '';
-    else
-        Project = match.Project;
-        Deployment = str2double(match.Deployment);
-        Site = match.Site;
-        try
-            info = dbDeploymentInfo(handles.query, 'Project', Project, ...
-                'DeploymentID', Deployment, 'Site', Site);            
-           
-            handles.DeploymentStart = ...
-                dbISO8601toSerialDate(info.SamplingDetails.Channel(1).Start);
-            handles.DeploymentEnd = ...
-                dbISO8601toSerialDate(info.SamplingDetails.Channel(1).End);
-        catch
-            handles.DeploymentStart = '';
-            handles.DeploymentEnd = '';            
+else
+    deployment_id = [];
+end
+% Attempt to divine the deployment identifier from an open LTSA or audio
+% file
+if length(PARAMS.ltsa.infile) + length(PARAMS.infile) > 0
+    % See if any of the deployment Ids are a substring of the filename
+    if ~ isempty(deployment_id)
+        fnames = string({PARAMS.ltsa.infile, PARAMS.infile});
+        for idx = 1:length(fnames)
+            if ~ isempty(fnames(idx))
+                % See if a deployment matches
+                matches = arrayfun(...
+                    @(dep) contains(fnames(1), dep, 'IgnoreCase', true), ...
+                    deployment_id);
+                match_idx = find(matches > 0, 1, 'first');
+                if ~ isempty(match_idx)
+                    break;
+                end
+            end
         end
     end
 else
-    % No LTSA or XWav open
-    Project = '';
-    Deployment = '';
-    Site = '';
-    handles.DeploymentStart = '';
-    handles.DeploymentEnd = '';
+    match_idx = [];
 end
-% Project 
-btnpos = [x(1,1), y(5,1), w, h];
-handles.project.txt = uicontrol(handles.logcallgui, TextAttrib{:},...
-    'String', 'Project', 'position', btnpos);
-btnpos = [x(1,2)-dsepx, y(5,1), w, h];
-handles.project.disp = uicontrol(handles.logcallgui,EditAttrib{:},...
-    'position', btnpos,'String', Project);
+handles.DeploymentStart = '';
+handles.DeploymentEnd = '';
 
 % Deployment
-labelStr = 'Deployment';
-btnpos = [x(1,1), y(6,1), w, h];
+labelStr = 'Deployment/Id';
+btnpos = [x(1,1), y(5,1), w, h];
 handles.deploy.text= uicontrol(handles.logcallgui, TextAttrib{:},...
-    'String', 'Deployment', 'Position', btnpos);
-btnpos = [x(1,2)-dsepx, y(6,1), w, h];
-handles.deploy.disp= uicontrol(handles.logcallgui,EditAttrib{:},...
-    'Position', btnpos,  'String', num2str(Deployment));
-
-% Site
-btnpos = [x(1,1), y(7,1), w, h];
-handles.site.txt= uicontrol(handles.logcallgui, TextAttrib{:},...
-    'String', 'Site', 'Position', btnpos);
-btnpos = [x(1,2)-dsepx, y(7,1), w, h];
-handles.site.disp= uicontrol(handles.logcallgui, EditAttrib{:},...
-    'Position', btnpos, 'String', Site);
-
+    'String', labelStr, 'Position', btnpos);
+btnpos = [x(1,2)-dsepx, y(5,1), w, h];
+if isempty(deployment_id)
+    handles.deploy.disp = uicontrol(handles.logcallgui, EditAttrib{:},...
+        'Position', btnpos,  'String', 'id');
+else
+    handles.deploy.disp = uicontrol(handles.logcallgui, PopupAttrib{:},...
+        'Position', btnpos,  'String', deployment_id);
+    if ~ isempty(match_idx)
+        % Set guess as first match
+        handles.deploy.disp.Value = match_idx;
+    end
+end
+    
 % Effort start time
 btnpos = [x(1,1), y(8,1), w, h];
 handles.effort_start.txt = uicontrol(handles.logcallgui,...
@@ -580,14 +603,13 @@ handles.effort_start.txt = uicontrol(handles.logcallgui,...
     'Callback', {@set_time, 'effort_start'}, ...
     'String', 'Effort Start Time', 'position', btnpos, ...
     'TooltipString', 'Set to start of deployment (if available)');
-
 btnpos = [x(1,2)-dsepx, y(8,1), w, h];
 handles.effort_start.disp = uicontrol(handles.logcallgui, EditAttrib{:},...
     'position', btnpos, ...
-    'String', datestr(handles.DeploymentStart, 31));
+    'String', handles.DeploymentStart);
 
 
-labelStr = 'set deployment metadata';
+labelStr = 'Set deployment metadata';
 btnpos = [mid-w, y(2,1), 2*w, 2*h];
 handles.done= uicontrol(handles.logcallgui,...
     'style', 'pushbutton',...
@@ -610,7 +632,7 @@ handles.effort_end.txt = uicontrol(handles.logcallgui, ButtonAttrib{:}, 'Visible
 btnpos = [x(1,2)-dsepx, y(4,2), w, h];
 handles.effort_end.disp = uicontrol(handles.logcallgui, EditAttrib{:}, ...
     'Visible', 'off','position', btnpos, ...
-    'String', datestr(handles.DeploymentEnd, 31));
+    'String', handles.DeploymentEnd);
 
 btnpos = [x(2,1), y(5,1), w, h];
 handles.end_previous.txt = uicontrol(handles.logcallgui, TextAttrib{:}, ...
@@ -628,17 +650,13 @@ handles.end_pick.disp = uicontrol(handles.logcallgui, TextAttrib{:}, ...
 
 
 
-handles.log.disp = [handles.deploy.disp handles.site.disp handles.user.disp];%...
-    %handles.region.disp];
-
-handles.log.text = [handles.deploy.text handles.site.txt handles.user.txt];% ...
-    %handles.region.txt];
+handles.log.disp = [handles.deploy.disp handles.user.disp];
+handles.log.text = [handles.deploy.text handles.user.text];
 
 handles.log.effort = [...
-    handles.project.txt handles.project.disp ... 
+    handles.user.text handles.user.disp ...
+    handles.deploy.text handles.deploy.disp ...
     handles.effort_start.txt handles.effort_start.disp ...
-    handles.deploy.text handles.deploy.disp handles.site.txt... 
-    handles.site.disp handles.user.txt handles.user.disp ...
     handles.done ];
 
 handles.log.close = [handles.done, ...
@@ -664,16 +682,25 @@ switch mode
         handles.meta = 0;  % meta data has not yet been specified
         % Start with a copy of the template
         try
-            copyfile(template, handles.logfile, 'f');
-        catch err
-            if strcmp(err.identifier, 'MATLAB:COPYFILE:OSError')
-                msg = sprintf(...
-                    ['Unable to copy template %s to %s.  ' ...
-                     'Possible causes:  open file or file permissions'], ...
-                     template, handles.logfile);
-            else
-                msg = err.message;
+            % Read template sheets and create proper plaintext CSVs
+            meta = readtable(template, 'Sheet', 'MetaData', 'TextType', 'string', 'PreserveVariableNames', true);
+            writetable(meta, fullfile(fdir, sprintf('%s_MetaData.csv', handles.logbase)));
+            onEffort = readtable(template, 'Sheet', 'Detections', 'TextType', 'string', 'PreserveVariableNames', true);
+            writetable(onEffort, fullfile(fdir, sprintf('%s_Detections.csv', handles.logbase)));
+            effortSheet = readtable(template, 'Sheet', 'Effort', 'TextType', 'string', 'PreserveVariableNames', true);
+            writetable(effortSheet, fullfile(fdir, sprintf('%s_Effort.csv', handles.logbase)));
+            
+            try
+                offEffort = readtable(template, 'Sheet', 'AdhocDetections', 'TextType', 'string', 'PreserveVariableNames', true);
+                writetable(offEffort, fullfile(fdir, sprintf('%s_AdhocDetections.csv', handles.logbase)));
+            catch
             end
+            
+            % Create an empty base log file just to mark the log's existence
+            fid = fopen(handles.logfile, 'w');
+            if fid > 0, fclose(fid); end
+        catch err
+            msg = err.message;
             delete(handles.logcallgui);
             errordlg(msg, 'Unable to start new log');
             return
@@ -718,6 +745,6 @@ switch type
         return  % bad value
 end
 if ~ isempty(time)
-    timestr = datestr(time, 31);
+    timestr = string(datetime(time, 'TimeZone', 'UTC'), 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
     set(handles.(type).disp, 'String', timestr);
 end

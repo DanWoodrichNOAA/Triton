@@ -19,42 +19,27 @@ ShowSpreadsheet = false;  % set to true for debugging
 
 % Enable going off-effort (ad-hoc)
 %set(handles.adhoc, 'Visible', 'on');
-% Set up an active X server to access this spreadsheet
-try
-     handles.Server = actxserver('Excel.Application');
-catch err
-     errordlg('Unable to access spreadsheet interface')
-     return
-end
 
-try
-    handles.Workbook = handles.Server.workbooks.Open(handles.logfile);  % Open workbook
-catch err
-    errordlg(sprintf('Unable to open spreadsheet %s', handles.logfile));
-    return
-end
-if handles.Workbook.ReadOnly ~= 0
-    handles.Workbook.Close();
-    handles.Workbook = [];
-    handles.Server.Quit();
-    handles.Server = [];
-    
+% Set up handles for files
+handles.Meta.File = fullfile(handles.logdir, sprintf('%s_MetaData.csv', handles.logbase));
+handles.OnEffort.File = fullfile(handles.logdir, sprintf('%s_Detections.csv', handles.logbase));
+handles.OffEffort.File = fullfile(handles.logdir, sprintf('%s_AdhocDetections.csv', handles.logbase));
+
+% Check writability
+[fid, ~] = fopen(handles.Meta.File, 'a');
+if fid < 0
+    errordlg(sprintf('Log files in %s are not writable', handles.logdir));
     delete(handles.logcallgui);  % Remove logger gui
-    errordlg(sprintf('Workbook %s is not writable', handles.logfile));
     clear GLOBAL handles;  % No longer valid
     return;
 end
-
-handles.Server.Visible = ShowSpreadsheet;  % for debugging
+if fid > 0, fclose(fid); end
 
 try
-    meta = handles.Workbook.Sheets.Item('MetaData');
+    handles.Meta.Sheet = readtable(handles.Meta.File, 'TextType', 'string', 'PreserveVariableNames', true);
 catch
-    errordlg('No MetaData sheet in workbook');
-    handles.Workbook.Close();
-    handles.Workbook = [];
-    handles.Server.Quit();
-    handles.Server = [];
+    errordlg('No MetaData file in log directory');
+    delete(handles.logcallgui);
     clear GLOBAL handles; % No longer valid
     return
 end
@@ -63,56 +48,61 @@ set(handles.logcallgui, 'CloseRequestFcn', @log_closewindow)
 
 for f = {'main', 'ctrl', 'msg'}
     field = f{1};
-    handles.log.oldclosefn.(field) = get(HANDLES.fig.(field), 'CloseRequestFcn');
-    set(HANDLES.fig.(field), 'CloseRequestFcn', @log_closewindow);
+    if isfield(HANDLES.fig, field) && isvalid(HANDLES.fig.(field))
+        handles.log.oldclosefn.(field) = get(HANDLES.fig.(field), 'CloseRequestFcn');
+        set(HANDLES.fig.(field), 'CloseRequestFcn', @log_closewindow);
+    end
 end
 
-handles.Meta.Sheet = meta;  % Save worksheet handle
-colsN = meta.UsedRange.Columns.Count;
-lastCol = excelColumn(colsN);
-headers = meta.Range(sprintf('A1:%s1', lastCol));
-handles.Meta.Headers = get(headers, 'Value');
+handles.Meta.Headers = handles.Meta.Sheet.Properties.VariableNames;
 
 if nargin == 2
     if length(MetadataNames) ~= length(MetadataValues)
         error('Mismatched name/value pairs');
     end
 
-    for idx=1:length(MetadataNames);
-        rowcol = headers.Find(MetadataNames{idx});
-        if isempty(rowcol)
+    for idx=1:length(MetadataNames)
+        col = find(strcmp(handles.Meta.Headers, MetadataNames{idx}));
+        if isempty(col)
             errordlg(sprintf('Missing column %s from MetaData sheet', ...
                 MetadataNames{idx}));
         else
-            col = rowcol.Column - 1;  % col in 0 to N-1 format
-            meta.Range(sprintf('%s2', excelColumn(col))).Value = ...
-                MetadataValues{idx};
+            val = MetadataValues{idx};
+            if ischar(val) && size(val,1) > 1
+                val = val(1,:);
+            end
+            if iscell(val)
+                val = val{1};
+            end
+            columnName = handles.Meta.Headers{col};
+            handles.Meta.Sheet.(columnName) = ...
+                string(handles.Meta.Sheet.(columnName));
+            handles.Meta.Sheet(1, col) = {string(val)};
         end
     end
+    writetable(handles.Meta.Sheet, handles.Meta.File);
 end
 
 % Save and store log and ad-hoc column labels
 try
-    handles.OnEffort.Sheet = handles.Workbook.Sheets.Item('Detections');
+    handles.OnEffort.Sheet = readtable(handles.OnEffort.File, 'TextType', 'string', 'PreserveVariableNames', true);
+    handles.OnEffort.Headers = handles.OnEffort.Sheet.Properties.VariableNames;
+    handles.OnEffort.Sheet = normalize_detection_columns( ...
+        handles.OnEffort.Sheet, handles.OnEffort.Headers);
+    handles.OnEffort.ParamCols = parameter_columns(handles.OnEffort.Headers);
 catch
-    errordlg('No Detections sheet in workbook');
+    errordlg('No Detections sheet in log folder');
 end
-colsN = handles.OnEffort.Sheet.UsedRange.Columns.Count;
-headerCols = handles.OnEffort.Sheet.Range(sprintf('A1:%s1', ...
-    excelColumn(colsN-1)));
-handles.OnEffort.Headers = headerCols.value();
-handles.OnEffort.ParamCols = parameter_columns(handles.OnEffort.Headers);
 
-handles.OffEffort.Sheet = handles.Workbook.Sheets.Item('AdhocDetections');
-if isempty(handles.OffEffort.Sheet)
+try
+    handles.OffEffort.Sheet = readtable(handles.OffEffort.File, 'TextType', 'string', 'PreserveVariableNames', true);
+    handles.OffEffort.Headers = handles.OffEffort.Sheet.Properties.VariableNames;
+    handles.OffEffort.Sheet = normalize_detection_columns( ...
+        handles.OffEffort.Sheet, handles.OffEffort.Headers);
+    handles.OffEffort.ParamCols = parameter_columns(handles.OffEffort.Headers);
+catch
     warndlg('The AdhocDetections sheet is missing.  No adhoc detections will be permitted');
     set(handles.adhoc, 'Visible', 'off');    % Disable off-effort button
-else
-    colsN = handles.OnEffort.Sheet.UsedRange.Columns.Count;
-    headerCols = handles.OffEffort.Sheet.Range(sprintf('A1:%s1', ...
-        excelColumn(colsN-1)));
-    handles.OffEffort.Headers = headerCols.value();
-    handles.OffEffort.ParamCols = parameter_columns(handles.OffEffort.Headers);
 end
 
 
@@ -128,25 +118,18 @@ for fname = {'imagedir', 'audiodir'}
 end
 
 % fetch metadata that we expect to be static
-fields = {'User ID', 'Project', 'Deployment', 'Site'};
+fields = {'User ID',  'DeploymentId'};
 for fidx = 1:length(fields);
     tmp = strrep(fields{fidx}, ' ', '_');  % no spaces
     col = find(strcmp(handles.Meta.Headers, fields{fidx}));
     if ~ isempty(col)
-        rng = handles.Meta.Sheet.Range(sprintf('%s2', excelColumn(col-1)));
-        handles.Meta.(tmp) = get(rng, 'Value');
+        handles.Meta.(tmp) = handles.Meta.Sheet{1, col};
     end
 end
 
 % This name is used as part of the image and audio filenames 
 % when the user takes a snapshot.
-if isnumeric(handles.Meta.Deployment)
-    handles.Meta.file_tag = sprintf('%s%d%s', handles.Meta.Project, ...
-        handles.Meta.Deployment, handles.Meta.Site);
-else
-    handles.Meta.file_tag = sprintf('%s%s%s', handles.Meta.Project, ...
-        handles.Meta.Deployment, handles.Meta.Site);
-end
+handles.Meta.file_tag = handles.Meta.DeploymentId;
 
 % Disable crosshair pointers when window loses focus
 % This relies on undocumented Matlab functionality.
@@ -161,18 +144,23 @@ end
 function cols = parameter_columns(headers)
 % cols = parameter_columns(headers)
 % Parse headers for parameters and return a cell array such that
-% cols(N) contains the column label for the Nth parameter.
+% cols{N} contains the column index for the Nth parameter.
 
-% Find headers with parameters
-global handles
-
-params = regexp(handles.OnEffort.Headers, 'Parameter\s(?<n>\d+)', ...
+params = regexp(headers, 'Parameter\s(?<n>\d+)', ...
     'ignorecase', 'names');
 paramI = ~cellfun(@isempty, params);
-for idx=find(paramI)
-    column = excelColumn(idx - 1);
-    cols{str2double(params{idx}.n)} = column;
+if any(paramI)
+    cols = cell(1, max(str2double(cellfun(@(x) x.n, params(paramI), 'UniformOutput', false))));
+    for idx=find(paramI)
+        cols{str2double(params{idx}.n)} = idx;
+    end
+else
+    cols = {};
 end
 
-
-
+function sheet = normalize_detection_columns(sheet, headers)
+for idx = 1:length(headers)
+    if ~contains(headers{idx}, 'Parameter', 'IgnoreCase', true)
+        sheet.(headers{idx}) = string(sheet.(headers{idx}));
+    end
+end

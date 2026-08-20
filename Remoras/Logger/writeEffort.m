@@ -5,11 +5,6 @@ function writeEffort(rootNode, spreadsheet)
 % either a string indicating a filename to be used or 
 % a handle to an active X (OLE) spreadsheet.
 
-debug = true;
-if debug
-    global handles
-    handles.Server.visible = true;
-end
 
 global TREE
 currNode = rootNode.getFirstChild();
@@ -99,39 +94,19 @@ while ~isempty(currNode) || level > 1
 end
 
 if ischar(spreadsheet)
-    % filename, try to open it
-    try
-        Excel = actxserver('Excel.Application');
-    catch err
-        errordlg('Unable to access spreadsheet interface')
-        return
-    end
-    %Excel.Visible = 1;  % for debugging
-
-    try
-        Workbook = Excel.workbooks.Open(spreadsheet);  % Open workbook
-    catch err
-        errordlg(sprintf('Unable to open spreadsheet %s', spreadsheet));
-        return
-    end
+    EffortFile = spreadsheet;
 else
-    Workbook = spreadsheet;  % Already open, copy handle
+    EffortFile = spreadsheet; 
 end
 
 try
-    EffortSheet = Workbook.Sheets.Item('Effort'); % Access the Effort sheet
+    EffortSheet = readtable(EffortFile, 'TextType', 'string', 'PreserveVariableNames', true);
 catch
-    errordlg('Master template missing Effort sheet');
+    errordlg('Master template missing Effort file');
+    return;
 end
 
-% erase and rewrite headers with granularity and bintime as columns
-colsN = EffortSheet.UsedRange.Columns.Count;
-cellRange = sprintf('A1:%s1', excelColumn(colsN));%need proper range format
-headerRange = get(EffortSheet, 'Range', cellRange);%get the range of the headers
-headerRangeCell = headerRange.value;%convert from range object to cell array
-
-
-
+headerRangeCell = EffortSheet.Properties.VariableNames;
 
 % Traverse rows, removing unselected ones and setting the granularity
 % where needed.  We move in reverse order as rows are deleted and this
@@ -139,56 +114,54 @@ headerRangeCell = headerRange.value;%convert from range object to cell array
 % in the same order as the effort sheet or things will break.  As the
 % list was generated from the effort sheet, this should not be problematic.
 
-% Replace NaN with '' so regexp doesn't faile
-charI = cellfun(@ischar, headerRangeCell);
-for idx = find(~charI)
-    headerRangeCell{idx} = '';
-end
-speciesCol= find(strcmp(headerRangeCell, 'Species Code'));
+speciesCol= find(strcmp(headerRangeCell, 'Species Code') | strcmp(headerRangeCell, 'Species_Code'));
 callCol = find(strcmp(headerRangeCell, 'Call'));
-granCol = excelColumn(find(strcmp(headerRangeCell, 'Granularity'))-1);
-groupCol = excelColumn(find(strcmp(headerRangeCell, 'Group'))-1);
+granCol = find(strcmp(headerRangeCell, 'Granularity'));
+groupCol = find(strcmp(headerRangeCell, 'Group'));
 
 if length(granCell) > 1
     % BinSize required
-    granLastCol = excelColumn(find(strcmp(headerRangeCell, 'BinSize_m'))-1);
+    granLastCol = find(strcmp(headerRangeCell, 'BinSize_m'));
 else
     granLastCol = granCol;
 end
 
 selectedidx = size(list, 1);
 
-RowsN = EffortSheet.UsedRange.Rows.Count;  % #rows in sheet
+RowsN = height(EffortSheet);  % #rows in sheet
 effortidx = RowsN;
 
 whitespace = false;  % for retaining spacing between entries 
-while effortidx > 1 && selectedidx >= 1
+while effortidx > 0 && selectedidx >= 1
     % Is the current row equivalent to the last row in list?
-    Range = EffortSheet.Range(sprintf('%d:%d', effortidx, effortidx));
-    values = Range.value;
+    values = EffortSheet(effortidx, :);
     
-    if ischar(values{callCol}) && ischar(values{speciesCol}) && ...
-            strcmp(values{callCol}, list{selectedidx, callCol}) && ...  
-            strcmp(values{speciesCol}, list{selectedidx, speciesCol})
+    callVal = values{1, callCol};
+    if iscell(callVal), callVal = callVal{1}; end
+    speciesVal = values{1, speciesCol};
+    if iscell(speciesVal), speciesVal = speciesVal{1}; end
+    
+    if ~ismissing(string(callVal)) && ~ismissing(string(speciesVal)) && ...
+            strcmp(string(callVal), string(list{selectedidx, callCol})) && ...  
+            strcmp(string(speciesVal), string(list{selectedidx, speciesCol}))
             % Matches, add granularity
-            GranRange = EffortSheet.Range(...
-                sprintf('%s%d:%s%d', granCol, effortidx, granLastCol, effortidx));
-            set(GranRange, 'Value', granCell);
+            EffortSheet{effortidx, granCol} = granCell{1};
+            if length(granCell) > 1
+                EffortSheet{effortidx, granLastCol} = granCell{2};
+            end
         
             if ~isempty(list{selectedidx, 1})
                 % first item in group, set group name
-                GrpRange = EffortSheet.Range(...
-                    sprintf('%s%d:%s%d', groupCol, effortidx, groupCol, effortidx));
-                set(GrpRange, 'Value', list{selectedidx, 1});
+                EffortSheet{effortidx, groupCol} = list{selectedidx, 1};
             end
             selectedidx = selectedidx - 1;        
             whitespace = false;
     else
         % The first empty row after retaining an entry is retained.
         % All others are removed.
-        has_data = sum(cellfun(@ischar, values));        
+        has_data = any(~ismissing(values{1, :}) & strlength(string(values{1, :})) > 0);        
         if has_data || whitespace
-            Range.Delete();
+            EffortSheet(effortidx, :) = [];
         end
         if ~ has_data
             whitespace = true;
@@ -198,17 +171,9 @@ while effortidx > 1 && selectedidx >= 1
 end
 
 % Remove any remaining rows
-while effortidx > 1
-    Range = EffortSheet.Range(sprintf('%d:%d', effortidx, effortidx));
-    Range.Delete();
+while effortidx > 0
+    EffortSheet(effortidx, :) = [];
     effortidx = effortidx - 1;
 end
 
-if ischar(spreadsheet)
-    % save and close, user wanted file operation
-    Workbook.Save();  % Save changes
-    Workbook.Close(false);  % Close program
-    Excel.Quit;  % Exit server
-end
-
-
+writetable(EffortSheet, EffortFile);

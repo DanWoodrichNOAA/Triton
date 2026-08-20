@@ -23,19 +23,29 @@ javaImage_checked = im2java(I,map);
 javaImage_partChecked = im2java(I,map);
 
 currNode = TREE.rootNode;
-[xlnum, xltext, xlcell]=xlsread(filename,'effort');
+
+[fdir, fbase, ~] = fileparts(filename);
+effortFile = fullfile(fdir, sprintf('%s_Effort.csv', strrep(fbase, '_Effort', '')));
+if ~exist(effortFile, 'file')
+    effortFile = filename;
+end
+
+EffortTbl = readtable(effortFile, 'TextType', 'string', 'PreserveVariableNames', true);
+headers = EffortTbl.Properties.VariableNames;
+data = table2cell(EffortTbl);
+for i = 1:numel(data)
+    if isstring(data{i})
+        if ismissing(data{i}), data{i} = ''; else, data{i} = char(data{i}); end
+    elseif isnumeric(data{i})
+        if isnan(data{i}), data{i} = ''; else, data{i} = num2str(data{i}); end
+    end
+end
+xltext = [headers; data];
 
 % Find columns of interest
 CommonNameI = strcmp(xltext(1,:), 'Common Name');
 CallI = strcmp(xltext(1,:), 'Call');
 
-% Calls that are numbers will not be read properly.  Fix them
-NumericInd = find(cellfun(@isnumeric, xlcell(:, CallI)));
-isNumber = ~cellfun(@isnan, xlcell(NumericInd,CallI)) & ~cellfun(@isinf, xlcell(NumericInd, CallI));
-NumericRows = NumericInd(isNumber)';
-for r=NumericRows
-    xltext{r, CallI} = num2str(xlcell{r, CallI});
-end
 lastrow=size(xltext,1);
 
 lastspecies = [];

@@ -40,19 +40,28 @@ row_groups = rows(groups);
 % Values returned
 entries = cell(length(rows), length(effort.Headers));
 
-for gidx = 1:size(row_groups, 1)
-    range = effort.Sheet.Range(sprintf(...
-        'A%d:%s%d', row_groups(gidx, 1), lastCol, row_groups(gidx, 2)));
-    entries(groups(gidx,1):groups(gidx,2), :) = range.Value();
+if istable(effort.Sheet)
+    entries = table2cell(effort.Sheet(rows, :));
+else
+    for gidx = 1:size(row_groups, 1)
+        range = effort.Sheet.Range(sprintf(...
+            'A%d:%s%d', row_groups(gidx, 1), lastCol, row_groups(gidx, 2)));
+        entries(groups(gidx,1):groups(gidx,2), :) = range.Value();
+    end
 end
 
-if commonnames
-    namecol = find(~cellfun(@isempty, ...
-        strfind(effort.Headers, 'Species Code')));
+if commonnames && size(TREE.textW, 2) >= 2 && size(TREE.textR, 2) >= 2
+    namecol = find(strcmpi(effort.Headers, 'Species Code'), 1);
     for idx=1:size(entries, 1)
-       codeidx = ~cellfun(@isempty, ...
-           strfind(TREE.textW(:,2), entries{idx, namecol}));
-       entries{idx, namecol} = TREE.textR{codeidx,2};
+        if isempty(namecol)
+            break
+        end
+        speciesCode = string(entries{idx, namecol});
+        codeidx = find(strcmp(string(TREE.textW(:, 2)), speciesCode), ...
+            1, 'first');
+        if ~isempty(codeidx)
+            entries{idx, namecol} = TREE.textR{codeidx, 2};
+        end
     end
 end
 
@@ -73,8 +82,11 @@ if format
             cidx = findHeader(UseCols{fidx, 1}, effort);
             switch UseCols{fidx, 2}
                 case 'date'
-                    if ischar(entries{lidx, cidx})
-                        str = sprintf('%s%s ', str, entries{lidx, cidx});
+                    if ischar(entries{lidx, cidx}) || isstring(entries{lidx, cidx})
+                        value = string(entries{lidx, cidx});
+                        if ~ismissing(value) && strlength(value) > 0
+                            str = sprintf('%s%s ', str, char(value));
+                        end
                     elseif ~isempty(entries{lidx, cidx}) ...
                             && ~isnan(entries{lidx, cidx})
                         str = sprintf('%s%s ', str, ...
@@ -82,7 +94,10 @@ if format
                             date_epoch('excel'),'YYYY-mm-DD HH:MM:SS'));
                     end
                 case '%s'
-                    str = sprintf('%s%s ', str, entries{lidx, cidx});
+                    value = string(entries{lidx, cidx});
+                    if ~ismissing(value) && strlength(value) > 0
+                        str = sprintf('%s%s ', str, char(value));
+                    end
             end
         end
         formatted{lidx} = str;

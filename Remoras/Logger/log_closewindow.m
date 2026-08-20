@@ -27,26 +27,31 @@ if (src >= 1 && src <= 3) || src == 7 || src == 9 %from 5 (old logger) to 7 (rem
     options = {};
     
     %  Find last detection
-    colStart = excelColumn(find(~cellfun(@isempty, ...
-        strfind(handles.OnEffort.Headers, 'Start time'))) -1);
-    colEnd =  excelColumn(find(~cellfun(@isempty, ...
-        strfind(handles.OnEffort.Headers, 'End time')))-1);
-    lastRow = log_lastRow(handles.OnEffort.Sheet);
-    if lastRow < 2
+    colStart = find(~cellfun(@isempty, ...
+        strfind(handles.OnEffort.Headers, 'Start time')));
+    colEnd =  find(~cellfun(@isempty, ...
+        strfind(handles.OnEffort.Headers, 'End time')));
+    lastRow = height(handles.OnEffort.Sheet);
+    if lastRow < 1
         handles.log.lastDate = [];  % no detections recorded
         lastDateStr = 'none';
         last = [];
     else
-        lastDateRange = handles.OnEffort.Sheet.Range(...
-            sprintf('%s2:%s%d,%s2:%s%d', ...
-            colStart, colStart, lastRow, ...
-            colEnd, colEnd, lastRow));
-        handles.log.lastDate = ...
-            handles.Server.WorksheetFunction.Max(lastDateRange) + ...
-            date_epoch('excel');
+        startDates = datetime(handles.OnEffort.Sheet{:, colStart}, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSZ', 'TimeZone', 'UTC');
+        if ~isempty(colEnd) && any(~ismissing(handles.OnEffort.Sheet{:, colEnd}))
+            validEnd = handles.OnEffort.Sheet{:, colEnd};
+            validEnd = validEnd(~ismissing(validEnd) & strlength(string(validEnd)) > 0);
+            if ~isempty(validEnd)
+                endDates = datetime(validEnd, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSZ', 'TimeZone', 'UTC');
+                handles.log.lastDate = max([max(startDates), max(endDates)]);
+            else
+                handles.log.lastDate = max(startDates);
+            end
+        else
+            handles.log.lastDate = max(startDates);
+        end
         
-        lastDateStr = datestr(handles.log.lastDate, ...
-            'yyyy/mm/dd HH:MM:SS');
+        lastDateStr = string(handles.log.lastDate, 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
         set(handles.end_pick.disp, 'String', lastDateStr);
         last = sprintf('Latest pick: %s', lastDateStr);
         options{end+1} = last;
@@ -55,23 +60,20 @@ if (src >= 1 && src <= 3) || src == 7 || src == 9 %from 5 (old logger) to 7 (rem
     % Is there a current end date from a previous session?
     previousEnd = [];  % Assume not until we learn otherwise
     endCol = find(strcmp(handles.Meta.Headers, 'Effort End'), 1, 'first');
-    endDate = get(handles.Meta.Sheet.Range(...
-                    sprintf('%s2', excelColumn(endCol-1))), 'Value');
-    if ~ isnan(endDate)
-        if ischar(endDate)
-            endDate = datenum(endDate);
-        else
-            endDate = endDate + date_epoch('excel');
-        end
+    if ~isempty(endCol)
+        endDateVal = handles.Meta.Sheet{1, endCol};
+        if ~ismissing(endDateVal) && strlength(string(endDateVal)) > 0
+            endDate = datetime(endDateVal, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSZ', 'TimeZone', 'UTC');
         
-        % Make the last recorded end of effort be an option if we have not
-        % detected anything past the end.
-        if isempty(last) || endDate >= handles.log.lastDate
-            endDateStr = datestr(endDate, 'yyyy/mm/dd HH:MM:SS');
-            set(handles.end_previous.disp, 'String', endDateStr);
-            previousEnd = sprintf('Existing:  %s', endDateStr);
-            handles.log.endDate = endDate;
-            options{end+1} = previousEnd;
+            % Make the last recorded end of effort be an option if we have not
+            % detected anything past the end.
+            if isempty(last) || endDate >= handles.log.lastDate
+                endDateStr = string(endDate, 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
+                set(handles.end_previous.disp, 'String', endDateStr);
+                previousEnd = sprintf('Existing:  %s', endDateStr);
+                handles.log.endDate = endDate;
+                options{end+1} = previousEnd;
+            end
         end
     end    
     

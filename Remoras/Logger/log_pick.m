@@ -6,8 +6,15 @@ global PARAMS handles
 
 pick = PARAMS.log.pick;  % what type of pick
 
-if ~ isempty(time)
-    time = time+dateoffset;  % Change from Triton date to std Matlab date
+if isnumeric(time)
+    time = datetime(time + dateoffset, 'ConvertFrom', 'datenum', ...
+        'TimeZone', 'UTC');
+elseif ischar(time) || isstring(time)
+    time = datetime(time, ...
+        'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSZ', ...
+        'TimeZone', 'UTC');
+elseif isdatetime(time) && isempty(time.TimeZone)
+    time.TimeZone = 'UTC';
 end
 
 % If the start time is after the stop time, swap them.
@@ -52,7 +59,8 @@ switch pick
             end
             
             timeXfreqStr = sprintf('%s  %s', ...
-                datestr(time(idx), 'YYYY-mm-DD HH:MM:SS.FFF'), freqstr);
+                char(string(time(idx), 'yyyy-MM-dd HH:mm:ss.SSS')), ...
+                freqstr);
             
             set(handles.timefreq(idx), 'String', timeXfreqStr, ...
                 'UserData', tf);
@@ -81,13 +89,13 @@ switch pick
     case 'effort_start'
         if ishandle(handles.effort_start.disp)
             set(handles.effort_start.disp, 'String', ...
-                datestr(time(1), 'YYYY-mm-DD HH:MM:SS.FFF'));
+                string(time(1), 'yyyy-MM-dd''T''HH:mm:ss.SSSZ'));
         end
         
     case 'effort_end'
-        PARAMS.log.end = datestr(time(1), 'YYYY-mm-DD HH:MM:SS.FFF');
+        PARAMS.log.end = string(time(1), 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
         set(handles.effort_end.disp, 'String', ...
-                datestr(time(1), 'YYYY-mm-DD HH:MM:SS.FFF'));
+                PARAMS.log.end);
 
 end
 

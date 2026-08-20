@@ -19,11 +19,9 @@ for f = {'pickstartdisplay', 'pickenddisplay'}
                 continue;
             end
         end
-        entry.(f) = datenum(value);
-        if isempty(entry.(f))
-                badhandles(end+1) = handles.(f);
-        else
-            entry.(f) = entry.(f);
+        entry.(f) = datetime(value, 'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSZ', 'TimeZone', 'UTC');
+        if isempty(entry.(f)) || any(isnat(entry.(f)))
+            badhandles(end+1) = handles.(f);
         end
     catch
         badhandles(end+1) = handles.(f);
@@ -78,13 +76,28 @@ if ~isempty(badhandles)
 end
 
 % Generate event id
-time = clock;
-entry.event = datestr(time, 'yyyy/mm/dd HH:MM:SS');
+time = datetime('now', 'TimeZone', 'UTC');
+entry.event = string(time, 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
+
+deploymentTag = string(handles.Meta.file_tag);
+if ismissing(deploymentTag) || strlength(strtrim(deploymentTag)) == 0
+    errordlg(['DeploymentId is missing from the log metadata. ' ...
+        'Set DeploymentId in the MetaData CSV before logging.'], ...
+        'Missing deployment metadata');
+    return
+end
+
+speciesTag = string(TREE.speciesR{Svalue});
+if ismissing(speciesTag) || strlength(strtrim(speciesTag)) == 0
+    errordlg('Select a species with a valid species code before logging.', ...
+        'Missing species code');
+    return
+end
 
 % Generate the basename for image and audio files
 entry.fname_time = sprintf('%s-%s-%s', ...
-    TREE.speciesR{Svalue}, handles.Meta.file_tag, ...
-    datestr(entry.pickstartdisplay, 'yyyymmddTHHMMSS'));
+    char(speciesTag), char(deploymentTag), ...
+    char(string(entry.pickstartdisplay, 'yyyyMMdd''T''HHmmss')));
 
 entry.comment = get(handles.comments, 'String');
 
@@ -129,40 +142,38 @@ handles.log.image = [];
 detection = handles.(PARAMS.log.mode);
 
 % Add one row for each call that is being logged
-currentRow = log_lastRow(detection.Sheet);
 for callIdx = 1:length(entry.calls)
-    currentRow = currentRow+1;
     
     % adjust event number to make unique
     if callIdx > 1
-        entry.event = datestr(clock, 'mm/dd/yyyy HH:MM:SS.FFF');
+        entry.event = string(datetime('now', 'TimeZone', 'UTC'), 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
     end
     
+    newRow = cell(1, length(detection.Headers));
+    
     for hidx = 1:length(detection.Headers)
-        if findstr(detection.Headers{hidx}, 'Parameter') == 1
+        if contains(detection.Headers{hidx}, 'Parameter', 'IgnoreCase', true)
             continue  % parameters are a special case
         end
-        column = excelColumn(hidx - 1);
-        Range = detection.Sheet.Range(sprintf('%s%d', column, currentRow));
         
         % Some fields are only populated for the first call
         firstonly = false; 
         
         switch lower(detection.Headers{hidx})
             case 'input file'
-                set(Range, 'Value', entry.src_file);
+                newRow{hidx} = entry.src_file;
             case 'start time'
-                set(Range, 'Value', entry.pickstartdisplay - date_epoch('excel'));
+                newRow{hidx} = string(entry.pickstartdisplay, 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
             case 'end time'
                 if isfield(entry, 'pickenddisplay')
-                    set(Range, 'Value', entry.pickenddisplay - date_epoch('excel'));
+                    newRow{hidx} = string(entry.pickenddisplay, 'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
                 end
             case 'event number'
-                set(Range, 'Value', entry.event);
+                newRow{hidx} = entry.event;
             case 'species code'
-                set(Range, 'Value', entry.species);
+                newRow{hidx} = entry.species;
             case 'call'
-                set(Range, 'Value', entry.calls{callIdx})
+                newRow{hidx} = entry.calls{callIdx};
             otherwise 
                 firstonly = true;
         end
@@ -171,20 +182,18 @@ for callIdx = 1:length(entry.calls)
             switch lower(detection.Headers{hidx})
                 case 'audio'
                     if ~ isempty(entry.audio)
-                        set(Range, 'Value', entry.audio);
+                        newRow{hidx} = entry.audio;
                     end
                 case 'image'
                     if ~ isempty(entry.image)
-                        set(Range, 'Value', entry.image);
+                        newRow{hidx} = entry.image;
                     end
                 case 'comments'
                     if ~ isempty(entry.comment)
-                        set(Range, 'Value', entry.comment);
+                        newRow{hidx} = entry.comment;
                     end
             end
         end
-        
-        % Note that we do not process parameter headers here
     end
     
     % Handle parameters associated with the call
@@ -194,27 +203,40 @@ for callIdx = 1:length(entry.calls)
     for pidx = 1:length(entry.callAttrib(attrIdx).values)
         if ~ isnan(entry.callAttrib(attrIdx).values(pidx))
             % Populate cell associated with parameter pidx
-            Range = detection.Sheet.Range(...
-                sprintf('%s%d', detection.ParamCols{pidx}, currentRow));
-            set(Range, 'Value', entry.callAttrib(attrIdx).values(pidx));
+            colIdx = detection.ParamCols{pidx};
+            newRow{colIdx} = entry.callAttrib(attrIdx).values(pidx);
+        end
+    end
+    
+    currentRow = height(detection.Sheet) + 1;
+    for hidx = 1:length(detection.Headers)
+        if ~isempty(newRow{hidx})
+            columnName = detection.Headers{hidx};
+            if contains(columnName, 'Parameter', 'IgnoreCase', true)
+                detection.Sheet.(columnName)(currentRow, 1) = newRow{hidx};
+            else
+                value = string(newRow{hidx});
+                detection.Sheet.(columnName)(currentRow, 1) = join(value, newline);
+            end
         end
     end
 end
 
+handles.(PARAMS.log.mode) = detection;
+writetable(detection.Sheet, detection.File);
 control_log('display_lastentry');  % Update last logged entry
 
-% Reset parameters, but preserve checkmarks on calls
+% Reset parameters while preserving the selected species and call types.
 checked = get(handles.calltype, 'Value');
 if iscell(checked)
     checked = cell2mat(checked);
 end
-control_log(handles.species.pulldown, [], 'species');
-for idx=1:length(checked)
-    if checked(idx) > 0
-        set(handles.calltype(idx), 'Value', checked(idx));
-        
-    end
+callAttr = get(handles.species.pulldown, 'UserData');
+for idx = 1:length(callAttr)
+    callAttr(idx).values(:) = NaN;
+    callAttr(idx).timefreq(:) = NaN;
 end
+set(handles.species.pulldown, 'UserData', callAttr);
 
 % Find last checked box and invoke the callback
 if sum(checked) > 0
@@ -227,11 +249,6 @@ end
 for f = {'pickstartdisplay', 'pickenddisplay', 'comments'}
     f = f{1};
     set(handles.(f), 'String', '');
-end
-
-% Save every Nth log entry
-if mod(currentRow, 5) == 0
-    handles.Workbook.Save();
 end
 
 1;
