@@ -43,7 +43,8 @@ end
 xltext = [headers; data];
 
 % Find columns of interest
-CommonNameI = strcmp(xltext(1,:), 'Common Name');
+CommonNameI = strcmp(xltext(1,:), 'Common Name') | ...
+    strcmp(xltext(1,:), 'CommonName');
 CallI = strcmp(xltext(1,:), 'Call');
 
 lastrow=size(xltext,1);

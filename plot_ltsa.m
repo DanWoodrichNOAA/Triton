@@ -69,9 +69,26 @@ elseif PARAMS.ltsa.fax == 2
     HANDLES.plt.ltsa = image(PARAMS.ltsa.t,PARAMS.ltsa.f/1000,c);
 end
 
-% Make sure color range is fixed.
+% Scale the color range to the data instead of a fixed [1,65].
+%
+% Take the limits from c, not from PARAMS.ltsa.pwr: c is what image() was just
+% handed, after the frequency range was cropped, after brightness and contrast
+% were applied at line 53, and after the log-frequency remap if that is on.
+% Using the untransformed power array agrees with c only at the default
+% brightness 0 / contrast 100 and full frequency range, and disagrees as soon
+% as the user changes either.
 set(HANDLES.plt.ltsa,'CDataMapping','scaled');
-caxis([1,65]);
+cLim = c(isfinite(c));
+if isempty(cLim)
+    caxis([1,65]);              % no finite data; keep the historical range
+else
+    cLimLo = min(cLim);
+    cLimHi = max(cLim);
+    if cLimHi <= cLimLo         % flat data; caxis requires an increasing range
+        cLimHi = cLimLo + 1;
+    end
+    caxis([cLimLo,cLimHi]);
+end
 
 % shift and shrink plot by dv
 dv = 0.075;
@@ -98,7 +115,7 @@ maxp = max(max(PARAMS.ltsa.pwr));
 % One of the child objects of the colorbar is an image, find it so we can
 % set an appropriate scale.
 PARAMS.ltsa.cbb = findobj(get(PARAMS.ltsa.cb, 'Children'), 'Type', 'image');
-minc = min(min(c));
+minc = min(abs(c(:)));
 maxc = max(max(c));
 difc = 2;
 set(PARAMS.ltsa.cbb,'CData',[minc:difc:maxc]')
@@ -168,6 +185,6 @@ end
 
 % change time in control window to data time in plot window
 set(HANDLES.ltsa.time.edtxt1,'String',timestr(PARAMS.ltsa.plot.dnum,6));
-set(HANDLES.ltsa.time.edtxt3,'String',PARAMS.ltsa.tseg.hr);
+% set(HANDLES.ltsa.time.edtxt3,'String',PARAMS.ltsa.tseg.hr);
 
 

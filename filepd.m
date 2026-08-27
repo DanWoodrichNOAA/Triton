@@ -11,6 +11,9 @@ function filepd(action)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 global PARAMS HANDLES DATA
 if strcmp(action,'openltsa')
+    if ~isfield(PARAMS.ltsa,'inpath')
+        initparams
+    end
     ipnamesave = PARAMS.ltsa.inpath;
     ifnamesave = PARAMS.ltsa.infile;
     % user interface retrieve file to open through a dialog box
@@ -79,7 +82,16 @@ elseif strcmp(action,'openwav')
         cd(PARAMS.inpath)
     end
     set(HANDLES.fig.ctrl, 'Pointer', 'watch');
-    PARAMS.ftype = 1;
+    PARAMS.specgram.clim = [];   % new file: re-derive the colour range
+    % The open dialog has offered flac since 2022, but ftype was hardcoded to
+    % 1, so a flac file was read as a RIFF wav and failed. Pick the type from
+    % the extension. Both are read through audioread, which handles flac.
+    [~,~,fext] = fileparts(PARAMS.infile);
+    if strcmpi(fext,'.flac')
+        PARAMS.ftype = 3;   % flac
+    else
+        PARAMS.ftype = 1;   % wav
+    end
     % enter start date and time
     prompt={'Enter Start Date and Time'};
     dnums = wavname2dnum(PARAMS.infile);
@@ -140,6 +152,7 @@ elseif strcmp(action,'openxwav')
     end
     % calculate the number of blocks in the opened file
     set(HANDLES.fig.ctrl, 'Pointer', 'watch');
+    PARAMS.specgram.clim = [];   % new file: re-derive the colour range
     PARAMS.ftype = 2;
     initdata
     if ~isempty(PARAMS.xhd.byte_length)

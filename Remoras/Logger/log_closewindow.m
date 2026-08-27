@@ -75,7 +75,7 @@ if (src >= 1 && src <= 3) || src == 7 || src == 9 %from 5 (old logger) to 7 (rem
                 options{end+1} = previousEnd;
             end
         end
-    end    
+    end
     
     terminate = questdlg(...
         'End logging session.  Close to cancel or denote end of effort by:', ...

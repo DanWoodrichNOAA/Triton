@@ -95,6 +95,9 @@ if ismissing(speciesTag) || strlength(strtrim(speciesTag)) == 0
 end
 
 % Generate the basename for image and audio files
+% if ismac
+%     handles.Meta.file_tag = string(handles.Meta.file_tag{1});
+% end
 entry.fname_time = sprintf('%s-%s-%s', ...
     char(speciesTag), char(deploymentTag), ...
     char(string(entry.pickstartdisplay, 'yyyyMMdd''T''HHmmss')));
@@ -193,6 +196,7 @@ for callIdx = 1:length(entry.calls)
                         newRow{hidx} = entry.comment;
                     end
             end
+        % Note that we do not process parameter headers here
         end
     end
     
