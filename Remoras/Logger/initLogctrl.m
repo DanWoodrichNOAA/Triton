@@ -35,8 +35,8 @@ end
 REMORA.pick.value = length(REMORA.pick.fcn);
 
 
-if exist('handles', 'var') && isfield(handles, 'Server') ...
-        && ~isempty(handles.Server)
+if exist('handles', 'var') && isfield(handles, 'logcallgui') ...
+    && isvalid(handles.logcallgui)
     errordlg('Cannot start a log while one is in progress.')
     return;
 end
@@ -716,15 +716,15 @@ switch mode
         % Start with a copy of the template
         try
             % Read template sheets and create proper plaintext CSVs
-            meta = readtable(template, 'Sheet', 'MetaData', 'TextType', 'string', 'PreserveVariableNames', true);
+            meta = readEffortTable(template, 'MetaData');
             writetable(meta, fullfile(fdir, sprintf('%s_MetaData.csv', handles.logbase)));
-            onEffort = readtable(template, 'Sheet', 'Detections', 'TextType', 'string', 'PreserveVariableNames', true);
+            onEffort = readEffortTable(template, 'Detections');
             writetable(onEffort, fullfile(fdir, sprintf('%s_Detections.csv', handles.logbase)));
             effortSheet = readEffortTable(template);
             writetable(effortSheet, fullfile(fdir, sprintf('%s_Effort.csv', handles.logbase)));
             
             try
-                offEffort = readtable(template, 'Sheet', 'AdhocDetections', 'TextType', 'string', 'PreserveVariableNames', true);
+                offEffort = readEffortTable(template, 'AdhocDetections');
                 writetable(offEffort, fullfile(fdir, sprintf('%s_AdhocDetections.csv', handles.logbase)));
             catch
             end

@@ -212,7 +212,7 @@ switch action
         deployment_id = log_getdeploymentids();
         % Verify user has filled in requested fields before proceeding
         fields = {'user', 'project', 'deploy', 'site', 'effort_start'};
-        WorksheetNames = {'User ID', 'Project', 'Deployment', 'Site', 'Effort Start'};
+        MetadataNames = {'User ID', 'Project', 'Deployment', 'Site', 'Effort Start'};
         values = cell(length(fields),1);
         bad = zeros(1, length(fields));
         for fidx = 1:length(fields)
@@ -305,7 +305,7 @@ switch action
         set(handles.log.effort, 'Visible', 'off');  % Hide metadata
         set(handles.done, 'Visible', 'off');
         set(handles.effortPane, 'Visible', 'on');
-        log_open(WorksheetNames, values);
+        log_open(MetadataNames, values);
         try
             if isfield(TREE, 'container') && ~isempty(TREE.container)
                 set(TREE.container, 'Visible', 'on');
@@ -555,15 +555,6 @@ switch action
             set(handles.binLabel,'Visible', 'off'); 
         end
         
-    case 'workbook_visibility_toggle'
-        if isfield(handles, 'Server')
-            % No longer applicable for CSV backend
-        else
-            str = get(HANDLES.fig.ctrl, 'Name');
-            set(HANDLES.fig.ctrl, 'Name', 'No log currently active');
-            pause(1)
-            set(HANDLES.fig.ctrl, 'Name', str);
-        end            
 end
 
     function displayed = displayCallParam(cidx, pidx, value)

@@ -2,7 +2,12 @@ function [chartR, chartW, orderR, project, headers, parameters] = spec_data(file
 % [chartR, chartW, orderR, project, headers, frequency] = spec_data(filename)
 % Read specifications for allowable detections
 
-[num, txt, raw] = xlsread(filename,'Effort');
+effortTable = readEffortTable(filename, 'Effort');
+raw = [effortTable.Properties.VariableNames; table2cell(effortTable)];
+txt = cell(size(raw));
+for idx = 1:numel(raw)
+    txt{idx} = cellText(raw{idx});
+end
 
 headers = txt(1,:);
 r = 1;
@@ -16,17 +21,6 @@ f = 1;
 HumanReadable = ~cellfun(@isempty, regexp(headers, 'Group|Common Name|Call'));
 MachineReadable = ~cellfun(@isempty, regexp(headers, 'Group|Species Code|Call'));
 Parameters = ~cellfun(@isempty, regexp(headers, 'Parameter.*'));
-
-% The machine writable version of the Call column must add ' to
-% calls that are numbers to prevent Excel from treating them as numbers.
-CallCol = ~cellfun(@isempty, regexp(headers, 'Call'));
-NumericInd = find(cellfun(@isnumeric, raw(:, CallCol)));
-isNumber = ~cellfun(@isnan, raw(NumericInd,CallCol)) & ~cellfun(@isinf, raw(NumericInd, CallCol));
-NumericRows = NumericInd(isNumber)';
-for r=NumericRows
-    txt{r, CallCol} = num2str(raw{r, CallCol});
-end
-    
 
 % make charts for the reading and writing inputs
 chartR = txt(2:end, HumanReadable);
@@ -56,7 +50,12 @@ for x = 1:size(chartR, 2)
     end
 end
 
-[nump, txtp, rawp] = xlsread(filename, 'MetaData');
+metadataTable = readEffortTable(filename, 'MetaData');
+rawp = [metadataTable.Properties.VariableNames; table2cell(metadataTable)];
+txtp = cell(size(rawp));
+for idx = 1:numel(rawp)
+    txtp{idx} = cellText(rawp{idx});
+end
 project = {};
 projdata(:,1)= txtp(2:length(txtp));
 
@@ -66,6 +65,34 @@ for y = 1:length(projdata)
     end
 end
 1;
+
+function text = cellText(value)
+if ischar(value)
+    text = value;
+elseif isstring(value)
+    if ismissing(value) || strlength(value) == 0
+        text = '';
+    else
+        text = char(value);
+    end
+elseif isnumeric(value)
+    if isempty(value) || isnan(value)
+        text = '';
+    else
+        text = num2str(value);
+    end
+else
+    try
+        value = string(value);
+        if ismissing(value) || strlength(value) == 0
+            text = '';
+        else
+            text = char(value);
+        end
+    catch
+        text = '';
+    end
+end
 
 
 

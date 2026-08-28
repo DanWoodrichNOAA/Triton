@@ -24,6 +24,8 @@ fod = fopen([PARAMS.outpath,PARAMS.outfile],'a');
 switch PARAMS.nBits
     case 16
         dtype = 'int16';
+    case 24
+        dtype = 'bit24';
     case 32
         dtype = 'int32';
     otherwise

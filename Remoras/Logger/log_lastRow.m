@@ -1,9 +1,5 @@
 function last = log_lastRow(sheetH)
 % last = log_lastRow(sheetH)
-% Return the last used row for a table or Excel worksheet.
+% Return the last used row for a table.
 
-if istable(sheetH)
-	last = height(sheetH);
-else
-	last = sheetH.UsedRange.Rows.Count;
-end
+last = height(sheetH);

@@ -1,8 +1,8 @@
 function entries = log_entries(effort, rows, format)
 % log_entries(effort, rows, format)
 % Given a structure containing information about on/off effort,
-% return detections for the specified rows.  Data starts on row 2 and 
-% the function log_lastRow can be used to find the last row used.
+% return detections for the specified table rows. The function log_lastRow
+% can be used to find the last row used.
 % If variable format is true, entry is formatted as a string and 
 % entries will contain an array of strings.  When format is false, 
 % a matrix of values are returned.
@@ -20,35 +20,11 @@ end
 
 lastRow = log_lastRow(effort.Sheet);
 if rows(end) > lastRow 
-    error('Worksheet only has %s rows', lastRow);
+    error('Detection table only has %s rows', lastRow);
 end
-
-
-lastCol = excelColumn(length(effort.Headers)-1);
-% Find contiguous groups, e.g. 2:7,
-
-
-groups = find(diff(rows) > 1)+1;
-if isempty(groups)
-    groups = [1, length(rows)];
-else
-    groups = [1; groups(:)];
-    groups = [groups, [groups(2:end)-1; length(rows)]];
-end
-row_groups = rows(groups);
 
 % Values returned
-entries = cell(length(rows), length(effort.Headers));
-
-if istable(effort.Sheet)
-    entries = table2cell(effort.Sheet(rows, :));
-else
-    for gidx = 1:size(row_groups, 1)
-        range = effort.Sheet.Range(sprintf(...
-            'A%d:%s%d', row_groups(gidx, 1), lastCol, row_groups(gidx, 2)));
-        entries(groups(gidx,1):groups(gidx,2), :) = range.Value();
-    end
-end
+entries = table2cell(effort.Sheet(rows, :));
 
 if commonnames && size(TREE.textW, 2) >= 2 && size(TREE.textR, 2) >= 2
     namecol = find(strcmpi(effort.Headers, 'Species Code'), 1);

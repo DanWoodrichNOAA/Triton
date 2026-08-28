@@ -1,9 +1,7 @@
 function writeEffort(rootNode, spreadsheet)
 % writeEffort(rootNode, spreadsheet)
 % Based on the current effort tree rooted at rootNode,
-% write the Effort to a spreadhseet.  Spreadsheet may be
-% either a string indicating a filename to be used or 
-% a handle to an active X (OLE) spreadsheet.
+% write the Effort table to a CSV file.
 
 
 global TREE
@@ -96,7 +94,7 @@ end
 if ischar(spreadsheet)
     EffortFile = spreadsheet;
 else
-    EffortFile = spreadsheet; 
+    error('Logger:InvalidEffortFile', 'Effort output must be a filename.');
 end
 
 try
@@ -118,6 +116,9 @@ speciesCol= find(strcmp(headerRangeCell, 'Species Code') | strcmp(headerRangeCel
 callCol = find(strcmp(headerRangeCell, 'Call'));
 granCol = find(strcmp(headerRangeCell, 'Granularity'));
 groupCol = find(strcmp(headerRangeCell, 'Group'));
+listGroupCol = 1;
+listSpeciesCol = 3;
+listCallCol = 4;
 
 requiredColumns = {speciesCol, callCol, granCol, groupCol};
 if any(cellfun(@(column) ~isscalar(column), requiredColumns))
@@ -156,9 +157,9 @@ while effortidx > 0 && selectedidx >= 1
     callPresent = ~all(ismissing(string(callVal)));
     speciesPresent = ~all(ismissing(string(speciesVal)));
     if callPresent && speciesPresent
-        callMatches = strcmp(string(callVal), string(list(:, callCol)));
+        callMatches = strcmp(string(callVal), string(list(:, listCallCol)));
         speciesMatches = strcmp(string(speciesVal), ...
-            string(list(:, speciesCol)));
+            string(list(:, listSpeciesCol)));
         matchIdx = find(callMatches & speciesMatches, 1, 'last');
     else
         matchIdx = [];
@@ -171,10 +172,10 @@ while effortidx > 0 && selectedidx >= 1
             EffortSheet{effortidx, granLastCol} = granCell{2};
         end
 
-        if ~isempty(list{matchIdx, 1})
+        if ~isempty(list{matchIdx, listGroupCol})
             % first item in group, set group name
             EffortSheet{effortidx, groupCol} = ...
-                string(list{matchIdx, 1});
+                string(list{matchIdx, listGroupCol});
         end
         list(matchIdx, :) = [];
         selectedidx = size(list, 1);

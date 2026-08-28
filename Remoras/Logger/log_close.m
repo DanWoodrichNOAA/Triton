@@ -8,24 +8,16 @@ global handles HANDLES PARAMS
 
 % Locate the end of effort
 effortEnd = 'Effort End';
-if ismac
-    col = 4;
-else
-    col = find(strcmp(handles.Meta.Headers, effortEnd), 1, 'first');
-end
+col = find(strcmp(handles.Meta.Headers, effortEnd), 1, 'first');
 if ~ isempty(end_effort_date)
     if isempty(col)
         errordlg(sprintf('Column %s missing from MetaData sheet', effortEnd));
         return
     else
-        if ismac
-            handles.Meta.Sheet.EffortEnd = datestr(end_effort_date,31);
-        else
-        colStr = excelColumn(col - 1);
-        set(handles.Meta.Sheet.Range(sprintf('%s2', colStr)), ...
-            'Value', datestr(end_effort_date, 31))
-        end
-
+        columnName = handles.Meta.Headers{col};
+        handles.Meta.Sheet.(columnName) = string(handles.Meta.Sheet.(columnName));
+        handles.Meta.Sheet{1, col} = string(end_effort_date, ...
+            'yyyy-MM-dd''T''HH:mm:ss.SSSZ');
     end
 end
 
@@ -33,24 +25,22 @@ PARAMS.log.pick = [];  % Turn off time X freq callback
 pickxyz(true);  % reset cursor
 
 % Save and close up
-if ismac
-    writetable(handles.OnEffort.Sheet,handles.logfile,'Sheet','Detections')
-    writetable(handles.OffEffort.Sheet,handles.logfile,'Sheet','AdhocDetections')
-    writetable(handles.Meta.Sheet,handles.logfile,'Sheet','MetaData')
-    writetable(handles.Effort.Sheet,handles.logfile,'Sheet','Effort','WriteMode','overwritesheet')
-else
-    handles.Workbook.Save();
-    handles.Workbook.Close();
-    handles.Workbook = [];
-    handles.Server.Quit();
-    handles.Server = [];
+writetable(handles.Meta.Sheet, handles.Meta.File);
+if isfield(handles, 'OnEffort') && isfield(handles.OnEffort, 'Sheet')
+    writetable(handles.OnEffort.Sheet, handles.OnEffort.File);
+end
+if isfield(handles, 'OffEffort') && isfield(handles.OffEffort, 'Sheet')
+    writetable(handles.OffEffort.Sheet, handles.OffEffort.File);
 end
 
 % Restore original closing function
 for f = {'main', 'ctrl', 'msg'}
     field = f{1};
-    set(HANDLES.fig.(field), ...
-        'CloseRequestFcn', handles.log.oldclosefn.(field));
+    if isfield(HANDLES.fig, field) && isfield(handles.log.oldclosefn, field) ...
+            && isvalid(HANDLES.fig.(field))
+        set(HANDLES.fig.(field), ...
+            'CloseRequestFcn', handles.log.oldclosefn.(field));
+    end
 end
 
 delete(handles.logcallgui);  % Remove logger gui

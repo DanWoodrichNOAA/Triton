@@ -19,7 +19,8 @@ switch oftype
     % Saving plotted data
     case 1
         num_samples = length( DATA(:,PARAMS.ch) );
-        data_bytes  = num_samples * 2; % 16 bits (2 bytes) per sample. Num bytes in
+        bytes_per_sample = PARAMS.nBits / 8;
+        data_bytes  = num_samples * bytes_per_sample;
         %     rf_byte_length = PARAMS.xhd.byte_length( 1 ); % we're trusting they stay
         % consistent in xhd
         rf_byte_length = PARAMS.tseg.samp * PARAMS.samp.byte;
@@ -32,7 +33,7 @@ switch oftype
         new_xhd.byte_loc = inf * ones( 1, num_rf );
         new_xhd.sample_rate  = PARAMS.xhd.sample_rate( 1, num_rf ) * ones( 1, num_rf ); % assume
         new_xhd.write_length = inf * ones( 1, num_rf );
-        rf_secs = rf_byte_length / ( PARAMS.fs * 2 );% 2 bytes/samples * samples/sec  = bytes/sec
+        rf_secs = rf_byte_length / ( PARAMS.fs * bytes_per_sample );
         %initilize the header varibles
         new_datevec = datevec( PARAMS.plot.dnum ); % initial time
         nsec = floor( new_datevec(6) );
