@@ -304,6 +304,7 @@ return;
           set(HANDLES.coord.txt4, 'String', ch_num);
         end
         % calculate and dislpay the frequency
+        pwr = NaN;
         if length(PARAMS.t) > 1
           dt = PARAMS.t(2)-PARAMS.t(1);	% sec/pixel
           cp(1) = floor((x_coord+dt/2)/dt) + 1 ;
@@ -365,6 +366,7 @@ return;
     df = PARAMS.ltsa.f(2)-PARAMS.ltsa.f(1);	%hz/pixel???
     cp(2) = floor((cy - PARAMS.ltsa.f(1) +df/2)/df)+1;
     szpwr = size(PARAMS.ltsa.pwr);
+    pwr = NaN;
     if (cp(1)>= 1 & cp(1) <= szpwr(2)) ...
         & (cp(2) >= 1 & cp(2) <= szpwr(1))
       pwr = PARAMS.ltsa.pwr(cp(2),cp(1));

@@ -398,7 +398,9 @@ switch action
     case 'set_meta_end'
         endeffort = get(handles.effort_end.disp, 'String');
         try
-            enddate = datetime(endeffort, 'TimeZone', 'UTC');
+            enddate = datetime(endeffort, ...
+                'InputFormat', 'yyyy-MM-dd''T''HH:mm:ss.SSSZ', ...
+                'TimeZone', 'UTC');
         catch
             badfield(handles.effort_end.disp, 'Bad end time', .5);
             return
