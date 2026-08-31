@@ -50,10 +50,12 @@ end
 
 switch mode
     case 'create'
-        [fname, fdir] = uiputfile('.csv', 'New annotation log', 'unique_logname.csv');
+        [fname, fdir] = uiputfile('.csv', 'New annotation log', ...
+            fullfile(defaultLogDirectory(), 'unique_logname.csv'));
     case 'append'
         [fname, fdir] = ...
-            uigetfile({'*.csv'}, 'Open existing annotation log');
+            uigetfile({'*.csv'}, 'Open existing annotation log', ...
+            defaultLogDirectory());
     otherwise
         error('triton:logger', 'Bad log mode')
 end
@@ -785,6 +787,21 @@ if ~ isempty(time)
     localTime = utcTime + hours(timezoneOffset);
     timestr = string(localTime, 'yyyy-MM-dd''T''HH:mm:ss.SSS');
     set(handles.(type).disp, 'String', timestr);
+end
+
+function logDir = defaultLogDirectory()
+logDir = pwd;
+homeDir = getenv('USERPROFILE');
+if isempty(homeDir)
+    homeDir = getenv('HOME');
+end
+if ~isempty(homeDir)
+    desktopDir = fullfile(homeDir, 'Desktop');
+    if exist(desktopDir, 'dir')
+        logDir = desktopDir;
+    elseif exist(homeDir, 'dir')
+        logDir = homeDir;
+    end
 end
 
 

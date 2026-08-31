@@ -5,12 +5,6 @@ function writeEffort(rootNode, spreadsheet)
 
 
 global TREE
-currNode = rootNode.getFirstChild();
-tLength = rootNode.getDepth();
-if nargout > rootNode.getDepth()
-    tLength = nargout-1;
-end
-struct = cell(1,tLength);
 if strcmp(TREE.gran, 'binned')
     granOffset = 2;
     granCell = cell(1,2);%creat a  cell array, will only have two values and set
@@ -23,73 +17,7 @@ else
     granCell{1} = TREE.gran;
     binnedTime = false;
 end
-list = cell(0,tLength);
-flag1 = 0;
-level = currNode.getLevel();
-first = true;
-
-% params will be built into a matrix with default
-% parameters, one row for each species.  We double
-% the number of columns to accomadate users that
-% need to store time with selections.
-params = cell(0, 2*size(TREE.frequency,2));
-
-while ~isempty(currNode) || level > 1
-    
-    previous = currNode;
-    level = currNode.getLevel();
-    gpValue = currNode.getValue();
-    %disp(char(gpValue(2)));
-    selected = strcmp(gpValue(1), 'selected');
-    if selected
-        level = currNode.getLevel();
-        % We need to store two values for the second level of the tree
-        % Common name and abbreviation
-        offset = level >= 2;
-        if level == 2
-            values{level} = char(currNode.getName());
-        end
-        values{currNode.getLevel()+offset} = char(gpValue(2));
-        traverseChildren = currNode.getAllowsChildren();
-        
-        if traverseChildren
-            % Traverse children
-            currNode = currNode.getFirstChild();
-        else
-            % At a leaf node.  values{1:level} contain the tree info
-            list(end+1,1:level+offset) = values(1:level+offset);
-            if first
-                values{1} = '';  % effort template does not repeat group
-            end
-        end
-    else
-        traverseChildren = false;
-    end
-    
-    %disp([num2str(isempty(currNode.getNextSibling())), ' ', num2str(~isempty(currNode.getParent()))]);
-    if ~ traverseChildren
-        % Don't go further down the chain
-        % We are either at a leaf or we are not interested in this chain
-        
-        if ~isempty(currNode.getNextSibling())
-            % process siblings of the current node
-            currNode = currNode.getNextSibling();
-        elseif ~isempty(currNode.getParent().getNextSibling())
-            % no more siblings, process parent's siblings
-            currNode = currNode.getParent().getNextSibling();
-        elseif level ~= 1
-            % process grandparent's sibling
-            % Todo:  Make the whole process more general, perhaps
-            %        use a stack and push/pop
-            level = currNode.getParent().getParent().getLevel();
-            currNode = currNode.getParent().getParent().getNextSibling();
-        end
-    end
-    
-    if previous == currNode
-        break
-    end
-end
+list = selectedEffortLeaves(rootNode);
 
 if ischar(spreadsheet)
     EffortFile = spreadsheet;
@@ -98,7 +26,7 @@ else
 end
 
 try
-    EffortSheet = readtable(EffortFile, 'TextType', 'string', 'PreserveVariableNames', true);
+    EffortSheet = readEffortTable(EffortFile);
 catch
     errordlg('Master template missing Effort file');
     return;
@@ -201,3 +129,19 @@ while effortidx > 0
 end
 
 writetable(EffortSheet, EffortFile);
+
+function list = selectedEffortLeaves(rootNode)
+list = cell(0, 4);
+node = rootNode.getNextNode();
+while ~isempty(node)
+    nodeValue = node.getValue();
+    if ~node.getAllowsChildren() && strcmp(char(nodeValue(1)), 'selected')
+        speciesNode = node.getParent();
+        groupNode = speciesNode.getParent();
+        speciesValue = speciesNode.getValue();
+        list(end+1, :) = {char(groupNode.getName()), ...
+            char(speciesNode.getName()), char(speciesValue(2)), ...
+            char(nodeValue(2))};
+    end
+    node = node.getNextNode();
+end
